@@ -44,7 +44,7 @@ When one of these files is present, `src/contracts.cpp` or `src/spawner.cpp` cha
 
 | Variable | Effect |
 | --- | --- |
-| `SC_OFFLINE_BOOT_MAP` | The boot map, from `boot_map` (default `PU_All`). The prebuilt repo-root DLL doesn't recognize `PU_All` and skips its boot patch, so use `PU` with it. |
+| `SC_OFFLINE_BOOT_MAP` | The boot map, from `boot_map` (default `PU_All`). |
 | `SC_OFFLINE_START_SHIP` | The ship you start in, from `start_ship` |
 | `SC_OFFLINE_START` | From `start`. `Daymar` starts you over Daymar |
 | `SC_OFFLINE_SHIPS_FILE` | Where the ship list is read from |

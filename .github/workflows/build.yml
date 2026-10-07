@@ -48,7 +48,7 @@ jobs:
           msbuild-architecture: x64
 
       - name: Build (Release x64)
-        run: msbuild ChrisWareOffline.slnx /p:Configuration=Release /p:Platform=x64 /m
+        run: msbuild sc-offline.slnx /p:Configuration=Release /p:Platform=x64 /m
 
       # Release|x64 links with GenerateDebugInformation=false, so there is no PDB to upload.
       - name: Upload DLL + launcher artifact
@@ -78,8 +78,7 @@ jobs:
           name: dinput8-release
           path: built
 
-      # The player download: everything to play, in one folder. The repo-root prebuilt
-      # dinput8.dll is NOT in it; the zip carries the DLL CI just built.
+      # The player download: everything to play, in one folder, with the DLL CI just built.
       - name: Package sc-offline-<tag>.zip
         env:
           TAG: ${{ github.ref_name }}
@@ -110,9 +109,7 @@ jobs:
           prerelease: ${{ !startsWith(github.ref_name, 'v1.') }}
           body: |
             **Built from this repository's source** — commit `${{ github.sha }}` on
-            `${{ github.ref_name }}`. This is *not* the prebuilt `dinput8.dll` at the
-            repo root, which came from the mod's original author; the two binaries
-            differ. See the README's **Which DLL do I run?** section.
+            `${{ github.ref_name }}`.
 
             **Playing:** download `sc-offline-${{ github.ref_name }}.zip`, extract it, and run
             `sc-offline.exe` (Linux, experimental: `sc-offline.sh`). Do the README's one-time

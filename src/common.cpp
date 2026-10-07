@@ -12,7 +12,7 @@ void InitLog() { InitializeCriticalSection(&g_logLock); }
 void OpenConsole() {
     EnterCriticalSection(&g_logLock);
     AllocConsole();
-    SetConsoleTitleW(L"ChrisWareOffline");
+    SetConsoleTitleW(L"sc-offline");
     g_console = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                             nullptr, OPEN_EXISTING, 0, nullptr);
     LeaveCriticalSection(&g_logLock);

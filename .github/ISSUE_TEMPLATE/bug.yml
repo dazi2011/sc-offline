@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in sc-offline doesn't work
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: sc-offline version
+      description: First line of data/mod.log, or the release you downloaded
+    validations: {required: true}
+  - type: input
+    id: game
+    attributes:
+      label: Game version
+      description: "The 'Game:' line from `sc-offline.exe status`"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Platform
+      options: [Windows, Linux (Wine/Proton)]
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations: {required: true}
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `sc-offline.exe status`
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Attach data/launcher.log, data/mod.log and the game's Game.log (drag the files in).

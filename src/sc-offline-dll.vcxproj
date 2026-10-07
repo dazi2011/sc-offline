@@ -23,7 +23,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{5f8feb50-6e67-49b6-887e-2edf08e72427}</ProjectGuid>
-    <RootNamespace>ChrisWareOffline</RootNamespace>
+    <RootNamespace>ScOfflineDll</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
