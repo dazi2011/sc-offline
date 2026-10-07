@@ -1789,7 +1789,7 @@ struct Gui {
     std::wstring running;        // command being run, "" when idle
     int state = 0;               // 0 grey (unknown / game running), 1 green, 2 red
     bool hasLeftovers = false;
-    HFONT font = nullptr, mono = nullptr;
+    HFONT font = nullptr, mono = nullptr, mark = nullptr;
     HBRUSH brushes[3] = {};
     wstring here;
 };
@@ -1817,8 +1817,9 @@ static void RefreshLight() {
         if (Field(pc, "eac") == "renamed") left.push_back(L"EasyAntiCheat_EOS.exe renamed to .bak");
     }
     g.hasLeftovers = !left.empty();
-    if (GameRunning()) {
-        g.state = 0; text = L"Star Citizen is running. When it closes, sc-offline takes the mod out and undoes its PC changes.";
+    const bool gameUp = GameRunning();
+    if (gameUp) {
+        g.state = 2; text = L"NOT safe to go online: Star Citizen is running. When it closes, sc-offline takes the mod out and undoes its PC changes.";
     } else if (!left.empty()) {
         g.state = 2; text = L"NOT safe to go online yet. Click Uninstall to undo: ";
         for (size_t i = 0; i < left.size(); ++i) text += (i ? L"; " : L"") + left[i];
@@ -1830,7 +1831,6 @@ static void RefreshLight() {
     SetWindowTextW(g.lightText, text.c_str());
     InvalidateRect(g.light, nullptr, TRUE);
     const bool idle = g.running.empty();
-    const bool gameUp = g.state == 0 && GameRunning();
     for (int i = 0; i < 5; ++i) {
         bool on = idle && !gameUp;
         if (i == 4) on = on && g.hasLeftovers;   // Uninstall: only with something to undo
@@ -1929,7 +1929,7 @@ static void Layout(HWND wnd) {
     RECT r; GetClientRect(wnd, &r);
     const int W = r.right, H = r.bottom, m = 12, bh = 34;
     MoveWindow(g.light, m, m, 18, 18, TRUE);
-    MoveWindow(g.lightText, m + 28, m - 2, W - 2 * m - 28, 40, TRUE);
+    MoveWindow(g.lightText, m + 28, m - 2, W - 2 * m - 28 - 190, 40, TRUE);   // 190: the watermark
     int x = m; const int y = m + 46;
     const int widths[] = { 90, 80, 80, 80, 90 };
     for (int i = 0; i < 5; ++i) { MoveWindow(g.buttons[i], x, y, widths[i], bh, TRUE); x += widths[i] + 6; }
@@ -1954,7 +1954,7 @@ static LRESULT CALLBACK GuiProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         };
         g.light = mk(L"STATIC", L"", SS_NOTIFY, kIdLight);
         g.lightText = mk(L"STATIC", L"", 0, kIdLightText);
-        const wchar_t* names[] = { L"\u25B6  Play", L"Status", L"Update", L"Install", L"Uninstall" };
+        const wchar_t* names[] = { L"Play", L"Status", L"Update", L"Install", L"Uninstall" };
         for (int i = 0; i < 5; ++i) g.buttons[i] = mk(L"BUTTON", names[i], BS_PUSHBUTTON | WS_TABSTOP, kIdPlay + i);
         SendMessageW(g.buttons[0], BM_SETSTYLE, BS_DEFPUSHBUTTON, TRUE);
         mk(L"BUTTON", L"Open settings", BS_PUSHBUTTON | WS_TABSTOP, kIdSettings);
@@ -1974,13 +1974,29 @@ static LRESULT CALLBACK GuiProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
             L"Install    add the mod and leave it (Uninstall before going online)\r\n"
             L"Uninstall  take the mod out and undo the PC changes\r\n\r\n"
             L"The light above tells you whether it is safe to go back online.\r\n").c_str());
-        SetTimer(wnd, kTimerLight, 3000, nullptr);
+        SetTimer(wnd, kTimerLight, 1500, nullptr);
         RefreshLight();
         return 0;
     }
-    case WM_SIZE: Layout(wnd); return 0;
-    case WM_GETMINMAXINFO: ((MINMAXINFO*)lp)->ptMinTrackSize = { 720, 420 }; return 0;
-    case WM_TIMER: if (g.running.empty()) RefreshLight(); return 0;
+    case WM_SIZE: Layout(wnd); InvalidateRect(wnd, nullptr, TRUE); return 0;
+    case WM_PAINT: {
+        // SCUBAMOUNT watermark, top right, in a grey just darker than the background.
+        PAINTSTRUCT ps; HDC dc = BeginPaint(wnd, &ps);
+        if (!g.mark) g.mark = CreateFontW(-26, 0, 0, 0, FW_HEAVY, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
+        RECT r; GetClientRect(wnd, &r); r.right -= 12; r.top = 6; r.bottom = 44;
+        HGDIOBJ old = SelectObject(dc, g.mark);
+        SetBkMode(dc, TRANSPARENT);
+        const COLORREF bg = GetSysColor(COLOR_BTNFACE);
+        SetTextColor(dc, RGB(GetRValue(bg) * 4 / 5, GetGValue(bg) * 4 / 5, GetBValue(bg) * 4 / 5));
+        DrawTextW(dc, L"SCUBAMOUNT", -1, &r, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        SelectObject(dc, old);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case WM_GETMINMAXINFO: ((MINMAXINFO*)lp)->ptMinTrackSize = { 900, 460 }; return 0;
+    // Refresh during a command too (issue #22): `play` runs for the whole session, and the light must
+    // turn as soon as the mod is copied in and the game starts, not only when play returns.
+    case WM_TIMER: RefreshLight(); return 0;
     case WM_CTLCOLORSTATIC:
         if ((HWND)lp == g.light) {
             static const COLORREF c[3] = { RGB(150, 150, 150), RGB(40, 170, 70), RGB(210, 50, 50) };
@@ -2046,7 +2062,7 @@ static int RunGui() {
     wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     RegisterClassW(&wc);
     const wstring title = L"sc-offline " + Wide(SCO_VERSION) + L" - Star Citizen offline mod";
-    HWND wnd = CreateWindowExW(0, L"sc-offline", title.c_str(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 820, 560,
+    HWND wnd = CreateWindowExW(0, L"sc-offline", title.c_str(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1160, 640,
                                nullptr, nullptr, wc.hInstance, nullptr);
     if (!wnd) return kExitError;
     ShowWindow(wnd, SW_SHOWNORMAL);
@@ -2072,6 +2088,7 @@ static const char* kUsage =
     "  --dry-run         print every step, change nothing, start nothing\n"
     "  --skip-eac-check  don't stop when Easy Anti-Cheat looks active\n"
     "  --console         double-clicked: run `play` in this console instead of opening the window\n"
+    "  --window          open the window (from a terminal, or under Wine/Proton)\n"
     "\n"
     "exit codes: 0 ok, 1 error, 2 Easy Anti-Cheat active, 3 the game is running\n";
 
@@ -2081,6 +2098,8 @@ int wmain(int argc, wchar_t** argv) {
     // Double-clicked with no arguments: the window (issue #20). From a terminal, or with any
     // argument, the CLI runs exactly as before. `sc-offline.exe --console` forces the console run.
     if (argc == 1 && !GuiChild() && OwnsConsole() && !OnWine()) { FreeConsole(); return RunGui(); }
+    // `--window` opens it from a terminal or under Wine/Proton too.
+    if (argc == 2 && !_wcsicmp(argv[1], L"--window") && !GuiChild()) return RunGui();
     if (GuiChild()) { std::setvbuf(stdout, nullptr, _IONBF, 0); SetConsoleOutputCP(CP_UTF8); }
     if (argc == 4 && !_wcsicmp(argv[1], L"--delete-logs"))
         return DeleteSessionLogs(argv[2], _wcstoui64(argv[3], nullptr, 10));
@@ -2119,6 +2138,7 @@ int wmain(int argc, wchar_t** argv) {
 
     const wstring here = ExeDir();
     const wstring data = here + L"\\data";
+    CreateDirectoryW(data.c_str(), nullptr);   // a fresh unzip may not have it yet
     std::string header = "sc-offline.exe";
     for (int i = 1; i < argc; ++i) header += " " + Narrow(argv[i]);
     OpenLog(data, false, header.c_str());

@@ -22,6 +22,7 @@ sc-offline.exe [play|install|uninstall|status|update|help] [--game <folder>] [--
 | `--game <folder>` | Your `Roberts Space Industries`, `StarCitizen`, channel or `Bin64` folder. Overrides `game =` in `sc-offline.ini`. |
 | `--dry-run` | Prints every step it would take, then stops. Nothing is copied, deleted or started. |
 | `--skip-eac-check` | Don't stop when Easy Anti-Cheat looks active. |
+| `--window` | Open the window from a terminal, or under Wine/Proton. |
 | `--console` | Double-clicked: run `play` in the console instead of opening the window. |
 
 Exit codes: `0` ok · `1` error · `2` Easy Anti-Cheat is active · `3` the game is running. The helper's own codes, in `launcher.log`: `5` a PC change failed.
@@ -30,6 +31,7 @@ Everything the launcher prints also goes to `data\launcher.log` (rewritten each 
 
 ## The window
 
+A 1160×640 window (resizable, minimum 900×460) with a SCUBAMOUNT watermark at the top right.
 A double-click (no arguments, the exe's own console) opens a window instead of the console run. Each button
 runs `sc-offline.exe <command>` as a hidden child with `SC_OFFLINE_GUI=1`, so the window and the CLI share one
 code path. The child's output streams into the box, and its `[y/N]` questions are answered with the
@@ -37,10 +39,10 @@ code path. The child's output streams into the box, and its `[y/N]` questions ar
 
 The light uses only cheap checks: the game folder from `game =` or `data\game-path.txt`, the
 `sc-offline.installed` marker or sc-offline's `dinput8.dll` in Bin64, and `%ProgramData%\sc-offline\pc-changes.txt`.
-It refreshes every 3 seconds and after every command:
+It refreshes every 1.5 seconds, including while **Play** is running, and after every command:
 - **green**: nothing of the mod is in Bin64 and no PC changes are left;
-- **red**: lists what is left. **Uninstall** is enabled only in this state;
-- **grey**: the game is running, or the game folder isn't known yet.
+- **red**: the game is running, or it lists what is left. **Uninstall** is enabled only when something is left and the game is closed;
+- **grey**: the game folder isn't known yet.
 
 After **Update** applies a new version, the window restarts itself. Under Wine, or with any argument, the
 console run is unchanged.
