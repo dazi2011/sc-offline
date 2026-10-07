@@ -1,5 +1,8 @@
 #include "menu.h"
 #include "common.h"
+#include <string>
+#include <unordered_map>
+#include <share.h>
 #include "travel.h"
 #include "version.h"
 #include <algorithm>
@@ -125,6 +128,59 @@ static bool ContainsNoCase(const char* s, const char* needle, size_t n) {
     return false;
 }
 
+// Chinese names for systems and places, read once from data\\place_names_zh.txt ("key|name").
+// Keys are entity names, localization body keys (Stanton1a, Stanton1_L1) or "system:<name>".
+static std::unordered_map<std::string, std::string> g_zhPlaces;
+static bool g_zhPlacesLoaded = false;
+
+static std::string LowerKey(const char* s) {
+    std::string k(s);
+    for (char& c : k) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    return k;
+}
+
+static const char* ZhLookup(const std::string& key) {
+    if (!g_zhPlacesLoaded) {
+        g_zhPlacesLoaded = true;
+        char path[MAX_PATH];
+        if (DataFilePath(path, sizeof(path), "place_names_zh.txt"))
+            if (FILE* f = _fsopen(path, "r", _SH_DENYNO)) {
+                char line[512];
+                while (fgets(line, sizeof(line), f)) {
+                    line[strcspn(line, "\r\n")] = 0;
+                    char* sep = strchr(line, '|');
+                    if (line[0] == '#' || !sep || sep == line || !sep[1]) continue;
+                    *sep = 0;
+                    g_zhPlaces[LowerKey(line)] = sep + 1;
+                }
+                fclose(f);
+            }
+    }
+    const auto it = g_zhPlaces.find(key);
+    return it == g_zhPlaces.end() ? nullptr : it->second.c_str();
+}
+
+static const char* ZhSystem(const char* system) {
+    const char* zh = ZhLookup("system:" + LowerKey(system));
+    return zh ? zh : system;
+}
+
+static const char* ZhPlace(const char* name, const char* entity) {
+    if (const char* zh = ZhLookup(LowerKey(entity))) return zh;
+    if (_strnicmp(entity, "OOC_", 4) == 0) {
+        // OOC_Stanton_1a_Ariel -> Stanton1a, OOC_Stanton1_L1 -> Stanton1_L1
+        const char* a = entity + 4;
+        const char* b = strchr(a, '_');
+        if (b) {
+            const char* c = strchr(b + 1, '_');
+            const std::string first(a, b), second(b + 1, c ? c : b + 1 + strlen(b + 1));
+            if (const char* zh = ZhLookup(LowerKey((first + second).c_str()))) return zh;
+            if (const char* zh = ZhLookup(LowerKey((first + "_" + second).c_str()))) return zh;
+        }
+    }
+    return name;
+}
+
 static bool MatchesFilter(const char* name, const char* filter) {
     for (const char* p = filter; *p; ) {
         p += strspn(p, " _");
@@ -239,6 +295,28 @@ static void LoadFonts() {
         if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) continue;
         if ((font = io.Fonts->AddFontFromFileTTF(path, kBodySize)) != nullptr) break;
     }
+    // Chinese glyphs: data\font_zh.ttf/.ttc if present, then the macOS system fonts through
+    // Wine's Z: drive, then Windows' own. ImGui 1.92 rasterizes glyphs on demand, so no ranges.
+    char zh[MAX_PATH] = "";
+    const char* zhFonts[] = { nullptr, nullptr, "Z:\\System\\Library\\Fonts\\Hiragino Sans GB.ttc",
+                              "Z:\\System\\Library\\Fonts\\STHeiti Medium.ttc", nullptr, nullptr };
+    char own1[MAX_PATH], own2[MAX_PATH], win1[MAX_PATH], win2[MAX_PATH];
+    if (DataFilePath(own1, sizeof(own1), "font_zh.ttf")) zhFonts[0] = own1;
+    if (DataFilePath(own2, sizeof(own2), "font_zh.ttc")) zhFonts[1] = own2;
+    snprintf(win1, sizeof(win1), "%s\\Fonts\\msyh.ttc", dir); zhFonts[4] = win1;
+    snprintf(win2, sizeof(win2), "%s\\Fonts\\simhei.ttf", dir); zhFonts[5] = win2;
+    for (const char* path : zhFonts) {
+        if (!path || GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) continue;
+        ImFontConfig cfg;
+        cfg.MergeMode = font != nullptr;
+        if (ImFont* added = io.Fonts->AddFontFromFileTTF(path, kBodySize, &cfg)) {
+            if (!font) font = added;
+            strncpy_s(zh, path, _TRUNCATE);
+            break;
+        }
+    }
+    if (zh[0]) Log("[menu] Chinese font: %s", zh);
+    else Log("[menu] no Chinese font found; Chinese text will show as '?'");
     ImGuiStyle& st = ImGui::GetStyle();
     st.FontSizeBase = font ? kBodySize : 13.0f;
     st.FontScaleMain = font ? 1.0f : 1.3f;
@@ -392,10 +470,10 @@ static int g_npcPick = 0;
 static bool NpcPicker() {
     static char filter[64] = "";
     const int npcs = Menu_NpcCount();
-    if (npcs < 0) { Hint("Loading NPCs (you need to be in the universe)..."); return false; }
-    if (npcs == 0) { Hint("No NPCs found. Check data\\npcs.txt."); return false; }
+    if (npcs < 0) { Hint("正在加载 NPC（需要先进入游戏世界）..."); return false; }
+    if (npcs == 0) { Hint("没有找到 NPC，请检查 data\\npcs.txt。"); return false; }
     if (g_npcPick >= npcs) g_npcPick = 0;
-    if (SearchBox("##npcFilter", "Search NPCs", filter, sizeof(filter)))
+    if (SearchBox("##npcFilter", "搜索 NPC", filter, sizeof(filter)))
         for (int i = 0; i < npcs; ++i)
             if (MatchesFilter(Menu_NpcName(i), filter)) { g_npcPick = i; break; }
     char preview[128];
@@ -442,36 +520,36 @@ static void GearCombo(int slot, const char* label, const char* none, int& pick, 
 }
 
 static void DrawPlayerTab(bool& keepOpen) {
-    Section("Movement");
+    Section("移动");
     static bool  noclip = false;
     static float speed = 30.0f;
-    if (ImGui::Checkbox("Noclip", &noclip)) Menu_SetNoclip(noclip, speed);
+    if (ImGui::Checkbox("穿墙飞行", &noclip)) Menu_SetNoclip(noclip, speed);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##noclipSpeed", &speed, 1.0f, 500.0f, "Speed %.0f", ImGuiSliderFlags_Logarithmic))
+    if (ImGui::SliderFloat("##noclipSpeed", &speed, 1.0f, 500.0f, "速度 %.0f", ImGuiSliderFlags_Logarithmic))
         Menu_SetNoclipSpeed(speed);
-    Hint("F7 saves where you're standing and F8 takes you back. The Travel tab has named spots and places.");
+    Hint("F7 记录当前位置，F8 传送回去。“传送”标签页里还有命名地点和各类目的地。");
 
-    Section("Protection");
+    Section("保护");
     static bool god = true, ammo = false;
-    if (ImGui::Checkbox("God mode", &god)) Menu_SetGodMode(god);
+    if (ImGui::Checkbox("无敌模式", &god)) Menu_SetGodMode(god);
     ImGui::SameLine(0, 24);
-    if (ImGui::Checkbox("Infinite ammo", &ammo)) Menu_SetInfiniteAmmo(ammo);
+    if (ImGui::Checkbox("无限弹药", &ammo)) Menu_SetInfiniteAmmo(ammo);
 
-    Section("Gear");
+    Section("装备");
     static int  gear[Gear_SlotCount] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     static char gearFilter[64] = "";
     static const struct { const char* label; const char* none; } kGear[Gear_SlotCount] = {
-        { "Undersuit", "Default" }, { "Helmet", "None" }, { "Body", "None" }, { "Arms", "None" }, { "Legs", "None" },
-        { "Backpack", "None" }, { "Primary", "None" }, { "Sidearm", "None" }, { "Ammo", "Matches weapon" }, { "Grenades", "None" } };
-    if (Menu_GearCount(0) < 0) { Hint("Loading gear (you need to be in the universe)..."); return; }
-    SearchBox("##gearFilter", "Search gear", gearFilter, sizeof(gearFilter));
+        { "内衬服", "默认" }, { "头盔", "无" }, { "躯干护甲", "无" }, { "手臂护甲", "无" }, { "腿部护甲", "无" },
+        { "背包", "无" }, { "主武器", "无" }, { "副武器", "无" }, { "弹药", "与武器匹配" }, { "手雷", "无" } };
+    if (Menu_GearCount(0) < 0) { Hint("正在加载装备（需要先进入游戏世界）..."); return; }
+    SearchBox("##gearFilter", "搜索装备", gearFilter, sizeof(gearFilter));
     const float half = Columns(2);
     for (int s = 0; s < Gear_SlotCount; ++s) {
         if (s % 2) ImGui::SameLine();
         GearCombo(s, kGear[s].label, kGear[s].none, gear[s], gearFilter, half);
     }
-    if (PrimaryButton("Equip gear")) { Menu_RequestEquip(gear); keepOpen = false; }
+    if (PrimaryButton("穿戴装备")) { Menu_RequestEquip(gear); keepOpen = false; }
 }
 
 // =============================================================================================
@@ -517,13 +595,13 @@ static void DrawTravelTab() {
         std::sort(order, order + np, [&](int a, int b) { return _stricmp(places[a].entity, places[b].entity) < 0; });
     }
 
-    SearchBox("##travelFilter", "Search places and saved spots", filter, sizeof(filter));
+    SearchBox("##travelFilter", "搜索地点和已保存的位置", filter, sizeof(filter));
 
-    Section("Places");
+    Section("地点");
     ImGui::SetNextItemWidth(-1);
-    ImGui::SliderFloat("##altitude", &altitude, 100.0f, 20000.0f, "Arrive %.0f m above the ground", ImGuiSliderFlags_Logarithmic);
-    ImGui::Checkbox("Show interiors and small zones", &showMinor);
-    ImGui::SetItemTooltip("Elevator lobbies, hangars, asteroid-belt segments and similar. Hidden by default.");
+    ImGui::SliderFloat("##altitude", &altitude, 100.0f, 20000.0f, "到达时离地 %.0f 米", ImGuiSliderFlags_Logarithmic);
+    ImGui::Checkbox("显示室内和小区域", &showMinor);
+    ImGui::SetItemTooltip("电梯大厅、机库、小行星带分段等，默认隐藏。");
     const TravelPlace* pick = nullptr;
     bool go = false;
     for (int s = 0; s < ns; ++s) {
@@ -531,14 +609,15 @@ static void DrawTravelTab() {
         for (int k = 0; k < np; ++k) {
             const TravelPlace& p = places[order[k]];
             if (p.kind == Place_Minor && !showMinor) continue;
-            if (_stricmp(p.system, systems[s]) == 0 && (!searching || MatchesFilter(p.name, filter) || MatchesFilter(p.entity, filter))) ++shown;
+            if (_stricmp(p.system, systems[s]) == 0 && (!searching || MatchesFilter(p.name, filter) || MatchesFilter(p.entity, filter)
+                                                        || MatchesFilter(ZhPlace(p.name, p.entity), filter))) ++shown;
         }
         if (!shown) continue;
         const bool isHere = here[0] && _stricmp(systems[s], here) == 0;
-        char header[80];
+        char header[200];
         const bool unnamed = _strnicmp(systems[s], "SolarSystem", 11) == 0;
-        snprintf(header, sizeof(header), "%s%s (%d)###sys_%s", unnamed ? "Unnamed system" : systems[s],
-                 isHere ? ", you are here" : "", shown, systems[s]);
+        snprintf(header, sizeof(header), "%s%s (%d)###sys_%s", unnamed ? "未命名星系" : ZhSystem(systems[s]),
+                 isHere ? "，你在这里" : "", shown, systems[s]);
         if (searching) ImGui::SetNextItemOpen(true);
         if (!ImGui::CollapsingHeader(header, isHere ? ImGuiTreeNodeFlags_DefaultOpen : 0)) continue;
         char table[48];
@@ -547,64 +626,69 @@ static void DrawTravelTab() {
         const float height = (rows + 1) * ImGui::GetFrameHeight() + 4;
         if (!ImGui::BeginTable(table, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_ScrollY, ImVec2(0, height))) continue;
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Place", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn("地点", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("类型", ImGuiTableColumnFlags_WidthFixed, 110);
         ImGui::TableHeadersRow();
         for (int k = 0; k < np; ++k) {
             const TravelPlace& p = places[order[k]];
             if (_stricmp(p.system, systems[s]) != 0 || (p.kind == Place_Minor && !showMinor)) continue;
-            if (searching && !MatchesFilter(p.name, filter) && !MatchesFilter(p.entity, filter)) continue;
+            if (searching && !MatchesFilter(p.name, filter) && !MatchesFilter(p.entity, filter)
+                && !MatchesFilter(ZhPlace(p.name, p.entity), filter)) continue;
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            char label[128];
-            snprintf(label, sizeof(label), "%s##%s", p.name, p.entity);
+            char label[256];
+            snprintf(label, sizeof(label), "%s##%s", ZhPlace(p.name, p.entity), p.entity);
             const bool isSel = _stricmp(selected, p.entity) == 0;
             if (ImGui::Selectable(label, isSel, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
                 strcpy_s(selected, p.entity);
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { pick = &p; go = true; }
             }
-            ImGui::SetItemTooltip("%s", p.entity);
+            ImGui::SetItemTooltip("%s\n%s", p.name, p.entity);
             ImGui::TableNextColumn();
-            static const char* const kKind[] = { "Planet", "Moon", "Place", "Interior" };
+            static const char* const kKind[] = { "行星", "卫星", "地点", "室内" };
             const int kindIdx = p.kind >= 0 && p.kind <= 3 ? p.kind : 2;
-            ImGui::TextDisabled("%s%s", kKind[kindIdx], kindIdx <= Place_Moon && p.radius <= 0 ? ", orbit" : "");
+            ImGui::TextDisabled("%s%s", kKind[kindIdx], kindIdx <= Place_Moon && p.radius <= 0 ? "，轨道" : "");
         }
         ImGui::EndTable();
     }
     if (!pick)
         for (int i = 0; i < np; ++i)
             if (_stricmp(places[i].entity, selected) == 0) { pick = &places[i]; break; }
-    char goLabel[96];
-    snprintf(goLabel, sizeof(goLabel), pick ? "Go to %s" : "Pick a place to go", pick ? pick->name : "");
+    char goLabel[240];
+    snprintf(goLabel, sizeof(goLabel), pick ? "前往 %s" : "选择一个目的地", pick ? ZhPlace(pick->name, pick->entity) : "");
     ImGui::BeginDisabled(!pick);
     if (PrimaryButton(goLabel)) go = true;
     ImGui::EndDisabled();
-    if (go && pick) Travel_RequestPlace(*pick, altitude);
+    if (go && pick) {
+        TravelPlace request = *pick;   // the name only shows in the status line
+        strncpy_s(request.name, ZhPlace(pick->name, pick->entity), _TRUNCATE);
+        Travel_RequestPlace(request, altitude);
+    }
 
     float progress = 0;
     if (Travel_Scanning(progress)) {
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, kLeafDeep);
-        ImGui::ProgressBar(progress, ImVec2(-1, 0), "Scanning...");
+        ImGui::ProgressBar(progress, ImVec2(-1, 0), "正在扫描...");
         ImGui::PopStyleColor();
-    } else if (ImGui::Button("Scan the game for places", ImVec2(-1, 0))) {
+    } else if (ImGui::Button("扫描游戏中的地点", ImVec2(-1, 0))) {
         Travel_RequestScan();
     }
-    Hint("The scan finds the planets, moons, stations, Lagrange points, comm arrays and jump points of every loaded "
-         "system and adds them here. It only reads; it takes a few seconds.");
+    Hint("扫描会找出所有已加载星系中的行星、卫星、空间站、拉格朗日点、通讯阵列和跳跃点，"
+         "并添加到这里。只读取不修改，需要几秒钟。");
 
-    Section("Saved spots");
+    Section("已保存的位置");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 160 - ImGui::GetStyle().ItemSpacing.x);
-    ImGui::InputTextWithHint("##markName", "Name this spot", markName, sizeof(markName));
+    ImGui::InputTextWithHint("##markName", "给这个位置起个名字", markName, sizeof(markName));
     ImGui::SameLine();
-    if (ImGui::Button("Save this spot", ImVec2(160, 0))) { Travel_RequestSaveBookmark(markName); markName[0] = 0; }
-    if (!nm) Hint("Nothing saved yet. Stand somewhere, name it, and press Save this spot.");
+    if (ImGui::Button("保存当前位置", ImVec2(160, 0))) { Travel_RequestSaveBookmark(markName); markName[0] = 0; }
+    if (!nm) Hint("还没有保存任何位置。站到想去的地方，起个名字，再点“保存当前位置”。");
     for (int s = 0; s < ns; ++s) {
         int shown = 0;
         for (int i = 0; i < nm; ++i)
             if (_stricmp(marks[i].system, systems[s]) == 0 && (!searching || MatchesFilter(marks[i].name, filter))) ++shown;
         if (!shown) continue;
-        char node[80];
-        snprintf(node, sizeof(node), "%s (%d)###marks_%s", systems[s], shown, systems[s]);
+        char node[200];
+        snprintf(node, sizeof(node), "%s (%d)###marks_%s", ZhSystem(systems[s]), shown, systems[s]);
         if (searching) ImGui::SetNextItemOpen(true);
         if (!ImGui::TreeNodeEx(node, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) continue;
         for (int i = 0; i < nm; ++i) {
@@ -614,14 +698,14 @@ static void DrawTravelTab() {
             ImGui::TextUnformatted(marks[i].name);
             const float buttons = 70 + 80 + ImGui::GetStyle().ItemSpacing.x;
             ImGui::SameLine(ImGui::GetContentRegionMax().x - buttons);
-            if (ImGui::Button("Go", ImVec2(70, 0))) Travel_RequestBookmark(i);
+            if (ImGui::Button("前往", ImVec2(70, 0))) Travel_RequestBookmark(i);
             ImGui::SameLine();
-            if (ImGui::Button("Delete", ImVec2(80, 0))) Travel_RequestDeleteBookmark(i);
+            if (ImGui::Button("删除", ImVec2(80, 0))) Travel_RequestDeleteBookmark(i);
             ImGui::PopID();
         }
         ImGui::TreePop();
     }
-    Hint("F7 and F8 still work as a quick save slot. Teleports only work within the system you're in.");
+    Hint("F7/F8 仍可作为快速存档位使用。传送只能在你当前所在的星系内进行。");
 }
 
 // =============================================================================================
@@ -633,31 +717,32 @@ static void DrawVehiclesTab(bool& keepOpen) {
     static char filter[64] = "";
     static MenuSpawnOptions opt;
 
-    Section("Spawn a ship");
+    Section("生成飞船");
     const int count = Menu_ShipCount();
     if (count < 0) {
-        Hint("Loading ships (you need to be in the universe)...");
+        Hint("正在加载飞船列表（需要先进入游戏世界）...");
     } else if (count == 0) {
-        Hint("No ships found. Check data\\ships.txt.");
+        Hint("没有找到飞船，请检查 data\\ships.txt。");
     } else {
         const MenuShip* ships = Menu_Ships();
         if (selected >= count) selected = 0;
-        SearchBox("##shipFilter", "Search ships", filter, sizeof(filter));
+        SearchBox("##shipFilter", "搜索飞船（中文名或代号）", filter, sizeof(filter));
         const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter
                                     | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
         if (ImGui::BeginTable("##ships", 3, flags, ImVec2(0, 230))) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("Ship", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 44);
-            ImGui::TableSetupColumn("Length", ImGuiTableColumnFlags_WidthFixed, 64);
+            ImGui::TableSetupColumn("飞船", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("尺寸", ImGuiTableColumnFlags_WidthFixed, 44);
+            ImGui::TableSetupColumn("长度", ImGuiTableColumnFlags_WidthFixed, 64);
             ImGui::TableHeadersRow();
             for (int i = 0; i < count; ++i) {
-                if (!MatchesFilter(ships[i].name, filter)) continue;
+                if (!MatchesFilter(ships[i].display, filter) && !MatchesFilter(ships[i].name, filter)) continue;
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
-                char label[96];
-                snprintf(label, sizeof(label), "%s##s%d", ships[i].name, i);
+                char label[240];
+                snprintf(label, sizeof(label), "%s##s%d", ships[i].display, i);
                 if (ImGui::Selectable(label, i == selected, ImGuiSelectableFlags_SpanAllColumns)) selected = i;
+                if (strcmp(ships[i].display, ships[i].name) != 0) ImGui::SetItemTooltip("%s", ships[i].name);
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("%d", ships[i].size);
                 ImGui::TableNextColumn();
@@ -667,25 +752,25 @@ static void DrawVehiclesTab(bool& keepOpen) {
         }
 
         ImGui::SetNextItemWidth(-1);
-        ImGui::SliderFloat("##height", &opt.height, 0.0f, 500.0f, "Spawn %.0f m above you");
-        static const char* const kBoard[] = { "Don't board", "Board in the pilot seat", "Board in a seat by name", "Choose a seat after it spawns" };
+        ImGui::SliderFloat("##height", &opt.height, 0.0f, 500.0f, "在你上方 %.0f 米处生成");
+        static const char* const kBoard[] = { "不登船", "登船并坐上驾驶座", "按名称选择座位登船", "生成后再选座位" };
         ImGui::SetNextItemWidth(-1);
         ImGui::Combo("##board", &opt.seatMode, kBoard, 4);
         if (opt.seatMode == SeatMode_Named) {
             ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextWithHint("##seatName", "Seat name, e.g. copilot or turret left", opt.seatName, sizeof(opt.seatName));
-            ImGui::SetItemTooltip("Every word must appear in the seat's name. The Crew tab shows a ship's seat names.");
+            ImGui::InputTextWithHint("##seatName", "座位名称，例如 copilot 或 turret left", opt.seatName, sizeof(opt.seatName));
+            ImGui::SetItemTooltip("每个词都必须出现在座位名称里。“船员”标签页可以查看飞船的座位名称。");
         }
         const bool boarding = opt.seatMode == SeatMode_Pilot || opt.seatMode == SeatMode_Named;
         ImGui::BeginDisabled(!boarding);
-        ImGui::Checkbox("Remove the NPC in my seat", &opt.replaceNpc);
+        ImGui::Checkbox("移除我座位上的 NPC", &opt.replaceNpc);
         ImGui::SameLine(0, 24);
-        ImGui::Checkbox("Power on", &opt.flightReady);
-        ImGui::SetItemTooltip("Powers the ship on once you're in a pilot seat.");
+        ImGui::Checkbox("启动电源", &opt.flightReady);
+        ImGui::SetItemTooltip("坐上驾驶座后自动启动飞船电源。");
         ImGui::EndDisabled();
 
-        char spawn[96];
-        snprintf(spawn, sizeof(spawn), "Spawn %s", ships[selected].name);
+        char spawn[240];
+        snprintf(spawn, sizeof(spawn), "生成 %s", ships[selected].display);
         if (PrimaryButton(spawn)) {
             MenuSpawnOptions send = opt;
             if (!boarding) send.flightReady = false;
@@ -694,12 +779,12 @@ static void DrawVehiclesTab(bool& keepOpen) {
         }
     }
 
-    Section("Current ship");
+    Section("当前飞船");
     static bool shipAmmo = false;
-    if (ImGui::Checkbox("Infinite ship ammo", &shipAmmo)) Menu_SetInfiniteShipAmmo(shipAmmo);
-    ImGui::SetItemTooltip("Refills the magazines of the ship you're aboard, and the ship in the Crew tab.");
-    if (ImGui::Button("Power on / off", ImVec2(-1, 0))) Menu_RequestFlightReady();
-    Hint("Toggles Flight Ready on the ship in the Crew tab, as if you pressed R in its pilot seat.");
+    if (ImGui::Checkbox("飞船无限弹药", &shipAmmo)) Menu_SetInfiniteShipAmmo(shipAmmo);
+    ImGui::SetItemTooltip("为你所在的飞船以及“船员”标签页中选中的飞船补满弹药。");
+    if (ImGui::Button("电源开 / 关", ImVec2(-1, 0))) Menu_RequestFlightReady();
+    Hint("切换“船员”标签页中飞船的飞行就绪状态，相当于在驾驶座按 R。");
 }
 
 // =============================================================================================
@@ -735,8 +820,8 @@ static void PrettySeatNames(const MenuSeat* seats, int n, const char* ship, char
 
 static void DrawCrewTab() {
     if (!Menu_SeatControlAvailable()) {
-        Section("Crew");
-        Hint("Seat control isn't available in this game version. mod.log has the details.");
+        Section("船员");
+        Hint("当前游戏版本不支持座位控制，详情见 mod.log。");
         return;
     }
     static MenuSeat seats[128];
@@ -746,24 +831,24 @@ static void DrawCrewTab() {
     char ship[64] = "";
     const int count = Menu_GetSeats(seats, 128, ship, sizeof(ship));
 
-    Section("Ship");
-    ImGui::TextUnformatted(count < 0 ? "No ship selected" : ship);
+    Section("飞船");
+    ImGui::TextUnformatted(count < 0 ? "未选择飞船" : ship);
     ImGui::SameLine();
     const float button = 190;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - button);
-    if (ImGui::Button("Use the ship I'm in", ImVec2(button, 0))) Menu_TargetShipImIn();
-    if (count < 0) { Hint("Spawn a ship, or board one and press 'Use the ship I'm in'."); return; }
-    if (count == 0) { Hint("Waiting for the ship to load..."); return; }
+    if (ImGui::Button("使用我所在的飞船", ImVec2(button, 0))) Menu_TargetShipImIn();
+    if (count < 0) { Hint("先生成一艘飞船，或登上一艘后点“使用我所在的飞船”。"); return; }
+    if (count == 0) { Hint("正在等待飞船加载..."); return; }
 
-    Section("Seats");
+    Section("座位");
     PrettySeatNames(seats, count, ship, pretty);
     int sel = -1;
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter
                                 | ImGuiTableFlags_BordersInnerH;
     if (ImGui::BeginTable("##seats", 2, flags, ImVec2(0, 250))) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Seat", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Occupant", ImGuiTableColumnFlags_WidthFixed, 90);
+        ImGui::TableSetupColumn("座位", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("乘员", ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableHeadersRow();
         for (int i = 0; i < count; ++i) {
             ImGui::TableNextRow();
@@ -775,10 +860,10 @@ static void DrawCrewTab() {
             if (seats[i].id == selectedSeat) sel = i;
             ImGui::TableNextColumn();
             switch (seats[i].state) {
-            case SeatState_You:   ImGui::TextColored(kLeaf, "You"); break;
+            case SeatState_You:   ImGui::TextColored(kLeaf, "你"); break;
             case SeatState_Npc:   ImGui::TextUnformatted("NPC"); break;
-            case SeatState_Taken: ImGui::TextDisabled("Unknown"); break;
-            default:              ImGui::TextDisabled("Empty"); break;
+            case SeatState_Taken: ImGui::TextDisabled("未知"); break;
+            default:              ImGui::TextDisabled("空"); break;
             }
         }
         ImGui::EndTable();
@@ -787,36 +872,36 @@ static void DrawCrewTab() {
     const int state = sel >= 0 ? seats[sel].state : -1;
     const float quarter = Columns(4);
     ImGui::BeginDisabled(sel < 0 || state == SeatState_You);
-    if (ImGui::Button("Sit here", ImVec2(quarter, 0))) Menu_RequestSit(seats[sel].id, replace);
+    if (ImGui::Button("坐这里", ImVec2(quarter, 0))) Menu_RequestSit(seats[sel].id, replace);
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(state != SeatState_Npc && state != SeatState_You);
-    if (ImGui::Button("Stand up", ImVec2(quarter, 0))) Menu_RequestStandUp(seats[sel].id);
-    ImGui::SetItemTooltip("Whoever is in the seat gets up and stays aboard.");
+    if (ImGui::Button("起身", ImVec2(quarter, 0))) Menu_RequestStandUp(seats[sel].id);
+    ImGui::SetItemTooltip("让座位上的人起身，但留在船上。");
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(state != SeatState_Npc);
-    if (ImGui::Button("Remove NPC", ImVec2(quarter, 0))) Menu_RequestKick(seats[sel].id);
-    ImGui::SetItemTooltip("Takes the NPC out of the game.");
+    if (ImGui::Button("移除 NPC", ImVec2(quarter, 0))) Menu_RequestKick(seats[sel].id);
+    ImGui::SetItemTooltip("把这个 NPC 从游戏中移除。");
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(state != SeatState_Empty);
-    if (ImGui::Button("Add NPC", ImVec2(quarter, 0))) Menu_RequestAddCrew(seats[sel].id, g_npcPick);
+    if (ImGui::Button("添加 NPC", ImVec2(quarter, 0))) Menu_RequestAddCrew(seats[sel].id, g_npcPick);
     ImGui::EndDisabled();
-    ImGui::Checkbox("If an NPC is in the seat I pick, remove it", &replace);
+    ImGui::Checkbox("如果选中的座位上有 NPC，先移除它", &replace);
 
-    Section("Crew");
-    Hint("NPC to add to seats:");
+    Section("船员");
+    Hint("要安排到座位上的 NPC：");
     const bool haveNpcs = NpcPicker();
     const float third = Columns(3);
     ImGui::BeginDisabled(!haveNpcs);
-    if (ImGui::Button("Fill empty seats", ImVec2(third, 0))) Menu_RequestFillCrew(g_npcPick);
+    if (ImGui::Button("填满空座位", ImVec2(third, 0))) Menu_RequestFillCrew(g_npcPick);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("All NPCs stand up", ImVec2(third, 0))) Menu_RequestStandAll();
+    if (ImGui::Button("所有 NPC 起身", ImVec2(third, 0))) Menu_RequestStandAll();
     ImGui::SameLine();
-    if (ImGui::Button("Remove all NPCs", ImVec2(third, 0))) Menu_RequestClearCrew();
-    Hint("NPCs you add sit in their seats. They don't fly the ship or operate turrets yet.");
+    if (ImGui::Button("移除所有 NPC", ImVec2(third, 0))) Menu_RequestClearCrew();
+    Hint("添加的 NPC 只会坐在座位上，暂时不会驾驶飞船或操作炮塔。");
 }
 
 // =============================================================================================
@@ -824,14 +909,14 @@ static void DrawCrewTab() {
 // =============================================================================================
 
 static void DrawNpcsTab(bool& keepOpen) {
-    Section("Spawn NPCs");
+    Section("生成 NPC");
     if (!NpcPicker()) return;
     static int howMany = 1;
     ImGui::SetNextItemWidth(-1);
-    ImGui::SliderInt("##howMany", &howMany, 1, 10, howMany == 1 ? "1 NPC" : "%d NPCs");
-    if (PrimaryButton("Spawn in front of me")) { Menu_RequestNpc(g_npcPick, howMany); keepOpen = false; }
-    if (ImGui::Button("Remove spawned NPCs", ImVec2(-1, 0))) Menu_RequestClearNpcs();
-    Hint("Removes every NPC this menu has spawned, crew included.");
+    ImGui::SliderInt("##howMany", &howMany, 1, 10, howMany == 1 ? "1 个 NPC" : "%d 个 NPC");
+    if (PrimaryButton("在我面前生成")) { Menu_RequestNpc(g_npcPick, howMany); keepOpen = false; }
+    if (ImGui::Button("移除已生成的 NPC", ImVec2(-1, 0))) Menu_RequestClearNpcs();
+    Hint("移除这个菜单生成的所有 NPC，包括船员。");
 }
 
 // =============================================================================================
@@ -842,9 +927,9 @@ static void DrawBuildTab(bool& keepOpen) {
     static int  build = 0, buildTab = 0;
     static char buildFilter[64] = "";
     const int buildables = Menu_BuildCount();
-    Section("Objects");
-    if (buildables < 0) { Hint("Loading build objects (you need to be in the universe)..."); return; }
-    if (buildables == 0) { Hint("No build objects found. Check data\\buildables.txt."); return; }
+    Section("物体");
+    if (buildables < 0) { Hint("正在加载建造物体（需要先进入游戏世界）..."); return; }
+    if (buildables == 0) { Hint("没有找到建造物体，请检查 data\\buildables.txt。"); return; }
     if (build >= buildables) build = 0;
     if (ImGui::BeginTabBar("##buildTabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
         for (int c = 0; c < Menu_BuildCategoryCount(); ++c) {
@@ -855,7 +940,7 @@ static void DrawBuildTab(bool& keepOpen) {
         }
         ImGui::EndTabBar();
     }
-    SearchBox("##buildFilter", "Search all objects", buildFilter, sizeof(buildFilter));
+    SearchBox("##buildFilter", "搜索所有物体", buildFilter, sizeof(buildFilter));
     const bool searching = buildFilter[strspn(buildFilter, " _")] != 0;
     if (ImGui::BeginChild("##buildList", ImVec2(0, 260), ImGuiChildFlags_Borders)) {
         for (int i = 0; i < buildables; ++i) {
@@ -875,27 +960,27 @@ static void DrawBuildTab(bool& keepOpen) {
     }
     ImGui::EndChild();
 
-    Section("Placing");
+    Section("放置");
     char picked[128];
     PrettyBuildName(picked, sizeof(picked), Menu_BuildName(build));
-    ImGui::Text("Selected: %s", picked);
+    ImGui::Text("已选择：%s", picked);
     float reach = Menu_BuildReach();
     ImGui::SetNextItemWidth(-1);
-    ImGui::SliderFloat("##reach", &reach, 5.0f, 300.0f, "Reach %.0f m");
-    ImGui::SetItemTooltip("How far ahead objects are placed. They land on the ground where you look.");
+    ImGui::SliderFloat("##reach", &reach, 5.0f, 300.0f, "放置距离 %.0f 米");
+    ImGui::SetItemTooltip("物体放在前方多远处，会落在你视线所指的地面上。");
     Menu_SetBuild(build, reach);
     const bool building = Menu_BuildModeActive();
-    if (PrimaryButton(building ? "Stop building (F6)" : "Start building (F6)")) {
+    if (PrimaryButton(building ? "停止建造（F6）" : "开始建造（F6）")) {
         Menu_ToggleBuildMode();
         if (!building) keepOpen = false;
     }
     const float half = Columns(2);
-    if (ImGui::Button("Undo last", ImVec2(half, 0))) Menu_BuildUndo();
+    if (ImGui::Button("撤销上一步", ImVec2(half, 0))) Menu_BuildUndo();
     ImGui::SameLine();
     char clearLabel[48];
-    snprintf(clearLabel, sizeof(clearLabel), "Clear base (%d)###clearBase", Menu_BuildPlacedCount());
+    snprintf(clearLabel, sizeof(clearLabel), "清空基地（%d）###clearBase", Menu_BuildPlacedCount());
     if (ImGui::Button(clearLabel, ImVec2(half, 0))) Menu_BuildClear();
-    Hint("While building: left click places, R rotates, [ and ] change reach, Backspace undoes, F6 stops.");
+    Hint("建造时：左键放置，R 旋转，[ 和 ] 调整距离，Backspace 撤销，F6 停止。");
 }
 
 // =============================================================================================
@@ -903,26 +988,26 @@ static void DrawBuildTab(bool& keepOpen) {
 // =============================================================================================
 
 static void DrawMenuTab() {
-    Section("Background");
+    Section("背景");
     if (g_bgSrv) {
-        ImGui::Checkbox("Show background image", &g_bgShow);
+        ImGui::Checkbox("显示背景图片", &g_bgShow);
         ImGui::BeginDisabled(!g_bgShow);
         ImGui::SetNextItemWidth(-1);
-        ImGui::SliderInt("##dark", &g_bgDarkness, 20, 95, "Darkness %d%%");
+        ImGui::SliderInt("##dark", &g_bgDarkness, 20, 95, "暗度 %d%%");
         if (static_cast<float>(g_bgW) / g_bgH > 0.7f) {
             ImGui::SetNextItemWidth(-1);
-            ImGui::SliderFloat("##pos", &g_bgPosition, 0.0f, 1.0f, "Image position");
-            ImGui::SetItemTooltip("The menu is taller than the picture is wide. Slide to choose which part shows.");
+            ImGui::SliderFloat("##pos", &g_bgPosition, 0.0f, 1.0f, "图片位置");
+            ImGui::SetItemTooltip("菜单比图片宽度更高，拖动滑块选择显示图片的哪一部分。");
         }
         ImGui::EndDisabled();
         Hint(g_bgPath);
     } else {
-        Hint("To use a background image, save it as menu_background.png (or .jpg) here, then restart the game:");
+        Hint("要使用背景图片，请把它保存为下面位置的 menu_background.png（或 .jpg），然后重启游戏：");
         ImGui::TextWrapped("%s", g_bgPath[0] ? g_bgPath : "data\\menu_background.png");
     }
 
-    Section("About");
-    Hint("ChrisWareOffline v" CWO_VERSION " is a work in progress.");
+    Section("关于");
+    Hint("ChrisWareOffline v" CWO_VERSION " 仍在开发中。");
     Hint("Discord: discord.gg/bUAuKMJUJs");
 }
 
@@ -931,7 +1016,7 @@ static void DrawMenuTab() {
 // =============================================================================================
 
 static void DrawStatusStrip(float height) {
-    char status[256];
+    char status[768];
     Menu_GetStatus(status, sizeof(status));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Hex(0x0B140D, 0.92f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 8));
@@ -947,26 +1032,26 @@ static void DrawStatusStrip(float height) {
 static void DrawSq42Tab(bool& keepOpen) {
     static bool spoilerOk = false;
     if (!spoilerOk) {
-        ImGui::SeparatorText("Spoiler warning");
-        ImGui::TextWrapped("This tab could have Squadron 42 spoilers.");
-        if (ImGui::Button("Press OK to continue.", ImVec2(-1, 0))) spoilerOk = true;
+        ImGui::SeparatorText("剧透警告");
+        ImGui::TextWrapped("这个标签页可能含有《42 中队》的剧透。");
+        if (ImGui::Button("点“OK”继续。", ImVec2(-1, 0))) spoilerOk = true;
         return;
     }
 
-    ImGui::SeparatorText("Outfits");
+    ImGui::SeparatorText("服装");
     const int outfits = Menu_OutfitCount();
     if (outfits < 0) {
-        ImGui::TextWrapped("Loading outfits... (you need to be spawned in the universe)");
+        ImGui::TextWrapped("正在加载服装...（需要先进入游戏世界）");
     } else {
         static int  outfit = 0;
         static char filter[64] = "";
         static bool visor = false;
         if (outfits == 0) {
-            ImGui::TextWrapped("No outfits found - check outfits.txt.");
+            ImGui::TextWrapped("没有找到服装，请检查 outfits.txt。");
         } else {
             if (outfit >= outfits) outfit = 0;
             ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextWithHint("##outfitFilter", "search outfits...", filter, sizeof(filter));
+            ImGui::InputTextWithHint("##outfitFilter", "搜索服装...", filter, sizeof(filter));
             ImGui::SetNextItemWidth(-1);
             if (ImGui::BeginCombo("##outfit", Menu_OutfitName(outfit), ImGuiComboFlags_HeightLargest)) {
                 for (int i = 0; i < outfits; ++i) {
@@ -984,16 +1069,16 @@ static void DrawSq42Tab(bool& keepOpen) {
                 ImGui::EndCombo();
             }
         }
-        if (ImGui::Checkbox("SQ42 visor HUD (applies on the next Equip or outfit)", &visor))
+        if (ImGui::Checkbox("SQ42 面罩 HUD（下次穿戴装备或服装时生效）", &visor))
             Menu_SetS42VisorHud(visor);
         // The preset is built in code, so it works even when outfits.txt is missing.
-        if (ImGui::Button("Wear SQ42 outfit", ImVec2(-1, 0))) {
+        if (ImGui::Button("穿上 SQ42 服装", ImVec2(-1, 0))) {
             Menu_RequestWearSq42();
             keepOpen = false;
         }
     }
 
-    ImGui::SeparatorText("Settings");
+    ImGui::SeparatorText("设置");
     for (int i = 0; i < Menu_S42SettingCount(); ++i) {
         bool on = Menu_S42SettingOn(i);
         ImGui::PushID(i);
@@ -1002,7 +1087,7 @@ static void DrawSq42Tab(bool& keepOpen) {
         ImGui::PopID();
     }
 
-    ImGui::SeparatorText("Spawn");
+    ImGui::SeparatorText("生成");
     {
         static int   thing = -1;
         static char  thingFilter[64] = "sq42";
@@ -1010,9 +1095,9 @@ static void DrawSq42Tab(bool& keepOpen) {
         static float ahead = 8.0f;
         const int buildables = Menu_BuildCount();
         if (buildables < 0) {
-            ImGui::TextWrapped("Loading... (you need to be spawned in the universe)");
+            ImGui::TextWrapped("正在加载...（需要先进入游戏世界）");
         } else if (buildables == 0) {
-            ImGui::TextWrapped("No buildables found - check buildables.txt.");
+            ImGui::TextWrapped("没有找到可建造物体，请检查 buildables.txt。");
         } else {
             if (thing < 0) {
                 thing = 0;
@@ -1020,9 +1105,9 @@ static void DrawSq42Tab(bool& keepOpen) {
                     if (_stricmp(Menu_BuildCategory(i), "sq42") == 0) { thing = i; break; }
             }
             if (thing >= buildables) thing = 0;
-            ImGui::Checkbox("Spawn in front of you", &inFront);
+            ImGui::Checkbox("在你面前生成", &inFront);
             ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextWithHint("##thingFilter", "search buildables...", thingFilter, sizeof(thingFilter));
+            ImGui::InputTextWithHint("##thingFilter", "搜索可建造物体...", thingFilter, sizeof(thingFilter));
             ImGui::SetNextItemWidth(-1);
             if (ImGui::BeginCombo("##sq42thing", Menu_BuildName(thing), ImGuiComboFlags_HeightLargest)) {
                 for (int i = 0; i < buildables; ++i) {
@@ -1037,29 +1122,29 @@ static void DrawSq42Tab(bool& keepOpen) {
             }
             if (inFront) {
                 ImGui::SetNextItemWidth(200);
-                ImGui::SliderFloat("ahead (m)", &ahead, 1.0f, 50.0f, "%.0f");
+                ImGui::SliderFloat("前方距离（米）", &ahead, 1.0f, 50.0f, "%.0f");
             }
-            if (ImGui::Button("Spawn it", ImVec2(-1, 0))) {
+            if (ImGui::Button("生成它", ImVec2(-1, 0))) {
                 Menu_RequestPlace(thing, inFront, ahead);
                 keepOpen = false;
             }
-            ImGui::SetItemTooltip("Undo and Clear base in the build section remove these too.");
+            ImGui::SetItemTooltip("建造部分的“撤销”和“清空基地”也会移除这些物体。");
         }
     }
 
-    ImGui::SeparatorText("Ships");
+    ImGui::SeparatorText("飞船");
     struct Entry { const char* label; const char* cls; bool enemyWing; float height; bool sit; };
     static const struct { const char* label; const char* cls; } kSq42Ships[] = {
-        { "Idris-P (the Stanton's class)", "AEGS_Idris_P" },
-        { "Gladius (SQ42 fighter)",        "AEGS_Gladius" },
-        { "Retaliator (has an S42 HUD)",   "AEGS_Retaliator" },
-        { "Starfarer (ch 5, 7, 9)",        "MISC_Starfarer" },
-        { "Avenger Stalker (S42 wreck)",   "AEGS_Avenger_Stalker" },
-        { "Hornet (Cal Mason's ship)",     "ANVL_Hornet_F7C" },
-        { "Vanduul Blade (AI)",            "VNCL_Blade_PU_AI_VAN" },
-        { "Vanduul Scythe (AI)",           "VNCL_Scythe_PU_AI_VAN" },
-        { "Vanduul Glaive (AI)",           "VNCL_Glaive_PU_AI_VAN" },
-        { "Vanduul Stinger (AI)",          "VNCL_Stinger_PU_AI_VAN" },
+        { "伊德里斯-P（斯坦顿号同级舰）", "AEGS_Idris_P" },
+        { "角斗士（SQ42 战斗机）",        "AEGS_Gladius" },
+        { "报复者（带 S42 HUD）",   "AEGS_Retaliator" },
+        { "星际远航者（第 5、7、9 章）",        "MISC_Starfarer" },
+        { "复仇者潜行者（S42 残骸）",   "AEGS_Avenger_Stalker" },
+        { "大黄蜂（卡尔·梅森的座驾）",     "ANVL_Hornet_F7C" },
+        { "范杜尔刀锋（AI）",            "VNCL_Blade_PU_AI_VAN" },
+        { "范杜尔镰刀（AI）",           "VNCL_Scythe_PU_AI_VAN" },
+        { "范杜尔长柄刀（AI）",           "VNCL_Glaive_PU_AI_VAN" },
+        { "范杜尔毒刺（AI）",          "VNCL_Stinger_PU_AI_VAN" },
     };
     Entry list[16];
     static_assert(sizeof(kSq42Ships) / sizeof(kSq42Ships[0]) + 2 <= sizeof(list) / sizeof(list[0]),
@@ -1072,8 +1157,8 @@ static void DrawSq42Tab(bool& keepOpen) {
 
     static char bengalB[64];
     const bool enemySide = Menu_EnemySideAvailable();
-    strcpy_s(bengalB, enemySide ? "Bengal B (enemy)" : "Bengal B (UEE, no enemy side found)");
-    list[n++] = { "Bengal A (UEE)", "RSI_Bengal_PU_AI_UEE", false,      1500.0f, false };
+    strcpy_s(bengalB, enemySide ? "孟加拉 B（敌方）" : "孟加拉 B（UEE，未找到敌方版本）");
+    list[n++] = { "孟加拉 A（UEE）", "RSI_Bengal_PU_AI_UEE", false,      1500.0f, false };
     list[n++] = { bengalB,          "RSI_Bengal_PU_AI_UEE", enemySide, 1500.0f, false };
 
     static int   pick = 0;
@@ -1082,9 +1167,9 @@ static void DrawSq42Tab(bool& keepOpen) {
     static bool  sit = true;
     if (pick >= n) pick = 0;
 
-    ImGui::TextWrapped("Your ships put you in the pilot seat; the Vanduul ones spawn 300 m up and come for you.");
+    ImGui::TextWrapped("己方飞船会让你坐上驾驶座；范杜尔飞船在上方 300 米生成并向你发起攻击。");
     ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##sq42shipFilter", "search ships...", sqFilter, sizeof(sqFilter));
+    ImGui::InputTextWithHint("##sq42shipFilter", "搜索飞船...", sqFilter, sizeof(sqFilter));
     ImGui::SetNextItemWidth(-1);
     if (ImGui::BeginCombo("##sq42ships", list[pick].label, ImGuiComboFlags_HeightLargest)) {
         for (int i = 0; i < n; ++i) {
@@ -1097,10 +1182,10 @@ static void DrawSq42Tab(bool& keepOpen) {
         ImGui::EndCombo();
     }
     if (list[pick].sit) {
-        ImGui::SliderFloat("height above me (m)", &height, 0.0f, 500.0f, "%.0f");
-        ImGui::Checkbox("put me in the pilot seat", &sit);
+        ImGui::SliderFloat("离我的高度（米）", &height, 0.0f, 500.0f, "%.0f");
+        ImGui::Checkbox("让我坐上驾驶座", &sit);
     }
-    if (ImGui::Button("Spawn", ImVec2(-1, 42))) {
+    if (ImGui::Button("生成", ImVec2(-1, 42))) {
         Menu_RequestSpawnClass(list[pick].cls,
                                list[pick].sit ? height : list[pick].height,
                                list[pick].sit && sit, list[pick].sit && sit,
@@ -1108,16 +1193,16 @@ static void DrawSq42Tab(bool& keepOpen) {
         keepOpen = false;
     }
 
-    ImGui::SeparatorText("Console");
+    ImGui::SeparatorText("控制台");
     static char cmd[192] = "";
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputTextWithHint("##console",
-                                 "a console command, e.g. i_target_selector.targeting2_enabled 1",
+                                 "控制台命令，例如 i_target_selector.targeting2_enabled 1",
                                  cmd, sizeof(cmd), ImGuiInputTextFlags_EnterReturnsTrue) && cmd[0]) {
         Menu_RunConsole(cmd);
         cmd[0] = 0;
     }
-    ImGui::TextWrapped("Runs in the game's own console. What it did shows in the game's log, not here.");
+    ImGui::TextWrapped("在游戏自带的控制台中执行，结果写在游戏日志里，不在这里显示。");
 }
 
 static bool DrawMenu() {
@@ -1136,14 +1221,14 @@ static bool DrawMenu() {
             if (ImGui::BeginChild("##body", ImVec2(0, bodyHeight))) draw();
             ImGui::EndChild();
         };
-        if (ImGui::BeginTabItem("Player"))   { body([&] { DrawPlayerTab(keepOpen); });   ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Travel"))   { body([&] { DrawTravelTab(); });           ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Vehicles")) { body([&] { DrawVehiclesTab(keepOpen); }); ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Crew"))     { body([&] { DrawCrewTab(); });             ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("NPCs"))     { body([&] { DrawNpcsTab(keepOpen); });     ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Build"))    { body([&] { DrawBuildTab(keepOpen); });    ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Squadron 42")) { body([&] { DrawSq42Tab(keepOpen); }); ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Menu"))     { body([&] { DrawMenuTab(); });             ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("玩家"))   { body([&] { DrawPlayerTab(keepOpen); });   ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("传送"))   { body([&] { DrawTravelTab(); });           ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("载具")) { body([&] { DrawVehiclesTab(keepOpen); }); ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("船员"))     { body([&] { DrawCrewTab(); });             ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("NPC"))     { body([&] { DrawNpcsTab(keepOpen); });     ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("建造"))    { body([&] { DrawBuildTab(keepOpen); });    ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("42 中队")) { body([&] { DrawSq42Tab(keepOpen); }); ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("菜单"))     { body([&] { DrawMenuTab(); });             ImGui::EndTabItem(); }
         ImGui::EndTabBar();
     }
     DrawStatusStrip(statusHeight);
