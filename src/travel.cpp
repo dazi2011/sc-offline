@@ -513,7 +513,7 @@ static void HandleRequest(DWORD now) {
 
     switch (req.kind) {
     case Req_Place: {
-        if (const char* err = GoToPlace(req.place, req.altitude)) SetMenuStatus("%s %s.", req.place.name, err);
+        if (const char* err = GoToPlace(req.place, req.altitude)) SetMenuStatus("%s：%s。", req.place.name, err);
         else if (req.place.radius > 0)
             SetMenuStatus("已传送到 %s，离地 %.0f 米。", req.place.name, req.altitude);
         else if (req.place.kind != Place_Other)

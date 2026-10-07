@@ -72,7 +72,7 @@ constexpr double kMaxLocalCoord = 1.0e12;
 
 // Returned when the only zone a spot shares with you is the universe root: the spot is in another
 // star system, which isn't loaded, so teleporting there leaves you floating in nothing.
-static const char* const kOtherSystem = "that spot is in another star system - travel to that system first";
+static const char* const kOtherSystem = "这个位置在另一个星系，请先前往那个星系";
 
 static bool PositionLooksValid(const double p[3]) {
     for (int i = 0; i < 3; ++i)
@@ -151,12 +151,12 @@ bool WorldToLocal(uintptr_t zone, const double world[3], double local[3]) {
 static const char* CaptureSpot(Spot& s, double world[3]) {
     __try {
         uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "player not spawned";
+        if (!GetLocalPlayer(actor, entity)) return "角色还没有生成";
         const uintptr_t zone = VCall<uintptr_t>(entity, 0x6B8);
-        if (!zone) return "not in a zone";
+        if (!zone) return "不在任何区域内";
         double local[3];
         Vec3Out(entity, 0x2B8, local);
-        if (!PositionLooksValid(local)) return "position out of range";
+        if (!PositionLooksValid(local)) return "位置超出范围";
         LocalToWorld(zone, local, world);
         s.n = 0;
         for (uintptr_t z = zone; z && s.n < kMaxZoneDepth; z = ZoneParent(z)) {
@@ -170,7 +170,7 @@ static const char* CaptureSpot(Spot& s, double world[3]) {
         }
         return s.n ? nullptr : "zone has no name";
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while reading player";
+        return "读取角色信息时出错";
     }
 }
 
@@ -198,15 +198,15 @@ static int SavedZoneLevel(const Spot& s) {
 }
 
 static const char* TeleportToSpot(const Spot& s, int& level) {
-    if (!s.n) return "no saved spot";
+    if (!s.n) return "还没有保存的位置";
     __try {
         uintptr_t actor, entity, zone = 0;
-        if (!GetLocalPlayer(actor, entity)) return "player not spawned";
+        if (!GetLocalPlayer(actor, entity)) return "角色还没有生成";
         level = FindSavedZone(s, entity, zone);
-        if (level < 0) return "you're not in any of the saved spot's zones (different planet/system?)";
+        if (level < 0) return "你不在保存位置所在的任何区域（换了星球或星系？）";
         if (level > 0 && !ZoneParent(zone)) return kOtherSystem;
         const uint64_t zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
+        if (!zoneId || ZoneFromId(zoneId) != zone) return "区域 ID 不匹配";
         const double* local = s.z[level].local;
         double world[3];
         LocalToWorld(zone, local, world);
@@ -219,31 +219,31 @@ static const char* TeleportToSpot(const Spot& s, int& level) {
         reinterpret_cast<float*>(params + 0x60)[3] = 1.0f;
         params[0x7D] = level > 0;
         const uintptr_t comp = VCall<uintptr_t>(actor, 0x9D8);
-        if (!comp) return "no teleport component";
+        if (!comp) return "找不到传送组件";
         VCall<void>(comp, 0x158, params);
         return nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while teleporting";
+        return "传送时出错";
     }
 }
 
 const char* TeleportToEntity(uint64_t entityId, double up) {
     __try {
         uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "player not spawned";
+        if (!GetLocalPlayer(actor, entity)) return "角色还没有生成";
         const uintptr_t es = *g_tp.entitySystem;
         const uintptr_t target = es && entityId ? VCall<uintptr_t>(es, 0x120, entityId) : 0;
-        if (!target) return "no such entity here (not streamed in?)";
+        if (!target) return "这里没有这个实体（可能还没加载进来）";
         const uintptr_t zone = VCall<uintptr_t>(target, 0x6B8);
-        if (!zone) return "the entity isn't in a zone";
+        if (!zone) return "这个实体不在任何区域内";
         const uint64_t zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
+        if (!zoneId || ZoneFromId(zoneId) != zone) return "区域 ID 不匹配";
         double local[3];
         Vec3Out(target, 0x2B8, local);
         const double r = sqrt(Dot(local, local));
         if (r > 100000.0) for (int i = 0; i < 3; ++i) local[i] += local[i] / r * up;
         else local[2] += up;
-        if (!PositionLooksValid(local)) return "position out of range";
+        if (!PositionLooksValid(local)) return "位置超出范围";
         double world[3];
         LocalToWorld(zone, local, world);
         alignas(16) uint8_t params[0x80] = {};
@@ -255,13 +255,13 @@ const char* TeleportToEntity(uint64_t entityId, double up) {
         reinterpret_cast<float*>(params + 0x60)[3] = 1.0f;
         params[0x7D] = 1;
         const uintptr_t comp = VCall<uintptr_t>(actor, 0x9D8);
-        if (!comp) return "no teleport component";
+        if (!comp) return "找不到传送组件";
         VCall<void>(comp, 0x158, params);
         Log("[tp] to entity %llu in '%s' (%.0f, %.0f, %.0f)", static_cast<unsigned long long>(entityId), ZoneName(zone),
             local[0], local[1], local[2]);
         return nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while teleporting";
+        return "传送时出错";
     }
 }
 
@@ -388,16 +388,21 @@ uintptr_t SystemZoneOf(uintptr_t zone) {
 }
 
 const char* TeleportIntoZone(uintptr_t zone, const double local[3]) {
-    if (!zone) return "no zone";
-    if (!PositionLooksValid(local)) return "position out of range";
+    if (!zone) return "没有区域";
+    if (!PositionLooksValid(local)) return "位置超出范围";
     __try {
         uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "player not spawned";
+        if (!GetLocalPlayer(actor, entity)) return "角色还没有生成";
         const uintptr_t mine = SystemZoneOf(VCall<uintptr_t>(entity, 0x6B8));
         const uintptr_t theirs = SystemZoneOf(zone);
-        if (!theirs || (mine && mine != theirs)) return "that place is in another star system - travel to that system first";
+        // With PU_All every star system is loaded, and teleporting into a zone of another system
+        // works (seen on 4.10.1: Stanton -> Pyro I L1 -> Pyro IV). Only refuse when the target's
+        // system is unknown.
+        if (!theirs) return "找不到目标所在的星系";
+        if (mine && mine != theirs)
+            Log("[tp] crossing star systems: %s -> %s", ZoneName(mine) ? ZoneName(mine) : "?", ZoneName(theirs) ? ZoneName(theirs) : "?");
         const uint64_t zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
+        if (!zoneId || ZoneFromId(zoneId) != zone) return "区域 ID 不匹配";
         double world[3];
         LocalToWorld(zone, local, world);
         alignas(16) uint8_t params[0x80] = {};
@@ -409,12 +414,12 @@ const char* TeleportIntoZone(uintptr_t zone, const double local[3]) {
         reinterpret_cast<float*>(params + 0x60)[3] = 1.0f;
         params[0x7D] = 1;
         const uintptr_t comp = VCall<uintptr_t>(actor, 0x9D8);
-        if (!comp) return "no teleport component";
+        if (!comp) return "找不到传送组件";
         VCall<void>(comp, 0x158, params);
         Log("[tp] into zone '%s' at (%.0f, %.0f, %.0f)", ZoneName(zone), local[0], local[1], local[2]);
         return nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while teleporting";
+        return "传送时出错";
     }
 }
 
