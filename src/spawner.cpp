@@ -113,10 +113,10 @@ bool ResolveSpawnApi(const Section& text, const Section& rdata) {
         Log("[ship] spawn params / seat helper not found; ship spawner disabled");
         return false;
     }
-    g_sp.teamCategory = reinterpret_cast<TeamCategoryFn>(f + 0x51 + 5 + Rel32(f + 0x52));
-    g_sp.setFlags     = reinterpret_cast<SpawnSetFlagsFn>(f + 0x46D + 5 + Rel32(f + 0x46E));
-    g_sp.setClass     = reinterpret_cast<SpawnSetClassFn>(f + 0x47D + 5 + Rel32(f + 0x47E));
-    g_sp.setLocation  = reinterpret_cast<SpawnSetLocFn>(f + 0x55C + 5 + Rel32(f + 0x55D));
+    g_sp.teamCategory = reinterpret_cast<TeamCategoryFn>(const_cast<uint8_t*>(f + 0x51 + 5 + Rel32(f + 0x52)));
+    g_sp.setFlags     = reinterpret_cast<SpawnSetFlagsFn>(const_cast<uint8_t*>(f + 0x46D + 5 + Rel32(f + 0x46E)));
+    g_sp.setClass     = reinterpret_cast<SpawnSetClassFn>(const_cast<uint8_t*>(f + 0x47D + 5 + Rel32(f + 0x47E)));
+    g_sp.setLocation  = reinterpret_cast<SpawnSetLocFn>(const_cast<uint8_t*>(f + 0x55C + 5 + Rel32(f + 0x55D)));
     g_sp.ctor         = reinterpret_cast<SpawnParamsCtorFn>(ctor);
     g_sp.findSeat     = reinterpret_cast<FindSeatFn>(seat);
     g_sp.game         = reinterpret_cast<uintptr_t*>(genv + 0xA0);
