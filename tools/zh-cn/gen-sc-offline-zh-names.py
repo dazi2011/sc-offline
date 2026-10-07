@@ -88,6 +88,70 @@ TOKEN = {
     'DefendShip': '护卫目标', 'CFP': '繁荣公民', 'BlacJac': '黑杰克', 'Override': '覆盖', 'Max': 'MAX', 'Gemini': '双子座', 'Body': '舰体', 'Nose': '舰首',
     'Tail': '舰尾', 'Left': '左', 'Right': '右', 'Lootable': '可搜刮', 'Rescue': '救援', 'Emerald': '翡翠',
 }
+# Place names without an official translation, matched case-insensitively before single words.
+PLACE_PROPER = {
+    'Levski': '列夫斯基', 'Ruin Station': '废墟空间站', 'Checkmate': '将军站', 'Orbituary': '轨道墓园',
+    'Glaciem Ring': '冰川环', 'Keeger Belt': '基格尔带', 'Aaron Halo': '亚伦光环', 'New Babbage': '新巴贝奇',
+    'Jump point to': '跳跃点至',
+}
+# Words in the game's internal place names (scan results, interiors, belt segments).
+PLACE_WORDS = {
+    'segment': '分段', 'int': '内部', 'interior': '内部', 'intoc': '内部容器', 'ab': '小行星带', 'mine': '矿点',
+    'keeger': '基格尔带', 'glaciemring': '冰川环', 'med': '中', 'mid': '中', 'middle': '中部', 'base': '基地',
+    'objectcontainer': '对象容器', 'objectcontainermodifier': '对象容器修饰', 'locationobjectcontainer': '地点对象容器',
+    'locationharvestableobjectcontainer': '可采集对象容器', 'oc': '对象容器', 'entrance': '入口', 'entry': '入口',
+    'lrg': '大', 'lge': '大', 'sml': '小', 'sm': '小', 'sfce': '表面', 'surface': '地表', 'surfaceentrance': '地表入口',
+    'mission': '任务', 'genrl': '通用', 'lobby': '大厅', 'rckcrk': '岩缝', 'rs': '休息站', 'rstop': '休息站',
+    'reststop': '休息站', 'outlaw': '法外者', 'tsg': 'TSG', 'gascloud': '气体云', 'elev': '电梯', 'reception': '接待处',
+    'orison': '奥瑞森', 'lorville': '罗威尔', 'levski': '列夫斯基', 'nose': '舰首', 'tail': '舰尾', 'rear': '后部',
+    'social': '社交区', 'delta': '德尔塔', 'comm': '通讯', 'habs': '居住舱', 'hab': '居住舱', 'restaurant': '餐厅',
+    'office': '办公室', 'occu': '占用', 'to': '至', 'single': '单人', 'point': '点', 'jump': '跳跃', 'side': '侧',
+    'rund': '破旧', 'rundown': '破旧', 'ext': '外部', 'newbab': '新巴贝奇', 'mic': '微科', 'hur': '赫斯顿',
+    'cru': '十字军', 'arc': '弧科', 'stan': '斯坦顿', 'layout': '布局', 'gate': '闸门', 'dung': '地牢',
+    'opendungeon': '开放地牢', 'temp': '临时', 'hull': '舰体', 'hatch': '舱口', 'hangar': '机库', 'gym': '健身房',
+    'exec': '行政', 'enctr': '遭遇', 'ctplr': '中庭', 'ctpl': '中庭', 'wing': '机翼', 'util': '公用', 'transit': '交通',
+    'rewards': '奖励', 'orbital': '轨道', 'orbtl': '轨道', 'npc': 'NPC', 'lrgfrnt': '大前部', 'medfrnt': '中前部',
+    'drlct': '残骸', 'cz': '争夺区', 'contestedzone': '争夺区', 'cargo': '货运', 'back': '后', 'spaceport': '航天港',
+    'refinery': '精炼厂', 'refin': '精炼', 'refindeck': '精炼甲板', 'topdeck': '上甲板', 'middeck': '中甲板',
+    'bottomdeck': '下甲板', 'teachsshipshop': '蒂奇飞船商店', 'ruinstation': '废墟空间站', 'rgt': '右', 'lft': '左',
+    'plat': '平台', 'ovgr': '杂草丛生', 'master': '主', 'main': '主', 'hospital': '医院', 'dealership': '经销店',
+    'command': '指挥', 'center': '中心', 'cbd': '中央商务区', 'asteroidbase': '小行星基地', 'arcade': '游戏厅',
+    'tower': '塔', 'domes': '穹顶', 'commercial': '商业区', 'ground': '地面', 'final': '终版', 'sp': '出生点',
+    'a18': '18区', 'stanton': '斯坦顿', 'pyro': '派罗', 'nyx': '尼克斯', 'terra': '特拉', 'magnus': '马格努斯',
+    'castra': '卡斯特拉', 'jp': '跳跃点', 'dummy': '占位', 'incredifun': '无敌乐园', 'iae': '星际航空展',
+    'starun': '星际联合', 'wtn': 'WTN', 'mose': 'MOSE', 'bsd': 'BSD', 'v2': 'V2', 'leo': '低轨道',
+}
+ROMAN = {'1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V', '6': 'VI'}
+
+def place_token(t, bodies):
+    low = t.lower()
+    if low in PLACE_WORDS: return PLACE_WORDS[low]
+    m = re.fullmatch(r'region([a-z])', low)
+    if m: return '区域' + m.group(1).upper()
+    m = re.fullmatch(r'(stanton|pyro|nyx)(\d)', low)
+    if m: return bodies.get(m.group(1).capitalize() + m.group(2), t)
+    m = re.fullmatch(r'p(\d)(l\d|leo)', low)             # p5l2 = Pyro V L2
+    if m: return f"派罗{ROMAN.get(m.group(1), m.group(1))} {m.group(2).upper() if m.group(2) != 'leo' else '低轨道'}"
+    m = re.fullmatch(r'jp(\d+)', low)
+    if m: return '跳跃点' + m.group(1)
+    m = re.fullmatch(r'oc(\d+)', low)
+    if m: return '对象容器' + m.group(1)
+    m = re.fullmatch(r'gate(\d+)', low)
+    if m: return '闸门' + m.group(1)
+    if re.fullmatch(r'\d+[a-z]?|[a-z]{1,3}|l\d+|[ivx]+', low): return t.upper() if not t[0].isdigit() else t
+    return t
+
+def translate_place(shown, proper, bodies):
+    text = shown
+    for en_name in sorted(proper, key=len, reverse=True):
+        text = re.sub(r'(?<![A-Za-z0-9])' + re.escape(en_name) + r'(?![A-Za-z0-9])', '\0' + proper[en_name] + '\0', text,
+                      flags=re.I)
+    out = []
+    for i, chunk in enumerate(text.split('\0')):
+        if i % 2: out.append(chunk); continue
+        out.extend(place_token(t, bodies) for t in re.split(r'[\s_\-]+', chunk) if t)
+    return tidy(join(*out))
+
 SYSTEMS = {'stanton': '斯坦顿', 'pyro': '派罗', 'nyx': '尼克斯', 'terra': '特拉', 'magnus': '马格努斯', 'castra': '卡斯特拉'}
 
 def read_ini(path):
@@ -210,8 +274,16 @@ def main(loc_dir, data_dir):
     print(f'ships: {len(ships) - len(missing)} named, {len(missing)} left as class names')
 
     places = {f'system:{k}': f'{v}星系' for k, v in SYSTEMS.items()}
+    bodies = {}
     for k, v in zh.items():             # Stanton1 赫斯顿星, Stanton1a 阿里尔, Stanton1_L1 HUR L1, Pyro4 派罗IV
-        if re.fullmatch(r'(Stanton|Pyro|Nyx|Terra|Castra|Magnus)\d+[a-z]?(_L\d)?', k): places[k] = v
+        if re.fullmatch(r'(Stanton|Pyro|Nyx|Terra|Castra|Magnus)\d+[a-z]?(_L\d)?', k): places[k] = bodies[k] = v
+    # English proper names with an official Chinese name (Orison 奥瑞森, Monox 派罗II, Area18 18区 ...).
+    proper = dict(PLACE_PROPER)
+    for k, v in zh.items():
+        e = en.get(k)
+        if e and len(e.split()) <= 3 and re.fullmatch(r'(Stanton|Pyro|Nyx|RR_|AaronHalo|Nyx_AsteroidBelt)\w*', k) \
+                and not re.search(r'desc|_short|Desc', k) and re.fullmatch(r"[A-Za-z0-9' .-]+", e):
+            proper.setdefault(e, v)
     for fname in ('locations.txt', 'locations_found.txt'):
         path = os.path.join(data_dir, fname)
         if not os.path.exists(path): continue
@@ -222,6 +294,12 @@ def main(loc_dir, data_dir):
             if m:
                 a, b = m.group(1).lower(), m.group(2).lower()
                 places[parts[2]] = f'跳跃点（{SYSTEMS.get(a, a)} → {SYSTEMS.get(b, b)}）'
+                continue
+            # OOC_<body> entities resolve through the body keys above, like the mod does.
+            mo = re.match(r'OOC_([^_]+)_([^_]+)', parts[2], re.I)
+            if mo and (mo.group(1) + mo.group(2) in places or mo.group(1) + '_' + mo.group(2) in places): continue
+            zh_name = translate_place(parts[1], proper, bodies)
+            if zh_name and zh_name != parts[1]: places[parts[2]] = zh_name
     with open(os.path.join(data_dir, 'place_names_zh.txt'), 'w', encoding='utf-8') as f:
         f.write('# 地点中文名：键|中文名。键是实体名、语言包天体键（Stanton1a）或 system:<星系>。\n')
         for k in sorted(places): f.write(f'{k}|{places[k]}\n')
