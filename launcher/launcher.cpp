@@ -252,7 +252,8 @@ static std::string Sha256(const std::string& bytes) {
     return hex;
 }
 
-// The original author's prebuilt dinput8.dll, as committed at the repository root.
+// The original author's prebuilt dinput8.dll (once at the repository root, removed in 0.3.0).
+// Still recognized so status/uninstall can identify and remove an old install.
 static const char* kPrebuiltSha256 = "57e0e5ed2151acc1020fd2ee300944842385f84bb66e216b5ebecb1ee57c10c9";
 
 // "key=value" lines, as in sc-offline.installed.
@@ -271,12 +272,7 @@ static std::string Field(const std::string& text, const char* key) {
 }
 
 // The sc-offline part of a version string: "0.9.0-rc1 / sc-offline 0.2.0-rc4" -> "sc-offline 0.2.0-rc4".
-static std::string ScOfflineVersion(const char* full) {
-    const char* p = std::strstr(full, "sc-offline ");
-    return p ? std::string(p) : std::string(full);
-}
-
-struct DllInfo { bool present = false; std::string sha, what, version; bool chrisware = false; };
+struct DllInfo { bool present = false; std::string sha, what, version; bool ours = false; };
 
 static DllInfo Identify(const wstring& path) {
     DllInfo d;
@@ -284,17 +280,20 @@ static DllInfo Identify(const wstring& path) {
     if (!ReadAll(path, bytes) || bytes.empty()) return d;
     d.present = true;
     d.sha = Sha256(bytes);
-    d.chrisware = bytes.find("ChrisWareOffline") != std::string::npos;
-    const size_t v = bytes.find("/ sc-offline ");
+    // Ours: any sc-offline build (0.3.0+ says "sc-offline v<ver>"; earlier ones said
+    // "ChrisWareOffline ... / sc-offline <ver>"), or the original prebuilt DLL.
+    d.ours = bytes.find("ChrisWareOffline") != std::string::npos || bytes.find("sc-offline v") != std::string::npos;
+    size_t v = bytes.find("sc-offline v"), skip = 12;
+    if (v == std::string::npos) { v = bytes.find("/ sc-offline "); skip = 13; }
     if (v != std::string::npos) {
-        size_t e = v + 2;
-        while (e < bytes.size() && bytes[e] >= 0x20 && bytes[e] < 0x7F) ++e;
-        d.version = bytes.substr(v + 2, e - v - 2);
-        d.what = "source build, " + d.version;
+        size_t e = v + skip;
+        while (e < bytes.size() && bytes[e] > 0x20 && bytes[e] < 0x7F) ++e;
+        d.version = bytes.substr(v + skip, e - v - skip);
+        d.what = "sc-offline " + d.version;
     } else if (d.sha == kPrebuiltSha256) {
         d.what = "the original author's prebuilt DLL";
     } else {
-        d.what = d.chrisware ? "unknown ChrisWareOffline build" : "not ChrisWareOffline";
+        d.what = d.ours ? "unknown sc-offline build" : "not sc-offline";
     }
     return d;
 }
@@ -356,7 +355,7 @@ static int PutMod(const wstring& here, const GamePaths& g, const char* mode, boo
         if (xmlState.empty()) xmlState = "skip";
     }
 
-    if (IsFile(g.dll) && !leftover && !Identify(g.dll).chrisware) {
+    if (IsFile(g.dll) && !leftover && !Identify(g.dll).ours) {
         if (IsFile(g.dllBackup))
             return Out("[!] %ls belongs to another mod and %ls already exists; move one of them away first\n",
                        g.dll.c_str(), g.dllBackup.c_str()), 2;
@@ -392,7 +391,7 @@ static int TakeMod(const GamePaths& g, bool dry) {
     int rc = 0;
 
     if (IsFile(g.dll)) {
-        if (haveMarker || Identify(g.dll).chrisware) {
+        if (haveMarker || Identify(g.dll).ours) {
             if (Step(dry, "delete %ls", g.dll.c_str())) {
                 bool gone = false;
                 for (int tries = 0; tries < 30 && !gone; ++tries) {
@@ -491,7 +490,7 @@ static BOOL WINAPI OnCtrl(DWORD type) {
 }
 
 static void SetVar(const wchar_t* name, const wstring& v) {
-    SetEnvironmentVariableW(name, v.empty() ? nullptr : v.c_str());   // empty = unset, like the .bat's `set X=`
+    SetEnvironmentVariableW(name, v.empty() ? nullptr : v.c_str());   // empty = unset
 }
 
 static bool OnWine() {
@@ -568,8 +567,8 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
         Out("Mod DLL:  %s\n          sha256 %s\n", mod.what.c_str(), mod.sha.c_str());
         if (mod.sha == kPrebuiltSha256 && _wcsicmp(cfg.bootMap.c_str(), L"PU"))
             Out("[!] the prebuilt DLL only knows boot_map = PU; set that in sc-offline.ini (now %ls)\n", cfg.bootMap.c_str());
-        if (!mod.version.empty() && mod.version != ScOfflineVersion(CWO_VERSION))
-            Out("[i] this launcher is %s; the DLL is %s\n", ScOfflineVersion(CWO_VERSION).c_str(), mod.version.c_str());
+        if (!mod.version.empty() && mod.version != SCO_VERSION)
+            Out("[i] this launcher is %s; the DLL is %s\n", SCO_VERSION, mod.version.c_str());
     }
 
     // 2. The game build, against the one recorded after the last play.
@@ -587,11 +586,11 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
     const bool haveMarker = ReadAll(g.marker, marker);
     const DllInfo inGame = Identify(g.dll);
     if (!inGame.present) Out("Installed: no (Bin64 has no dinput8.dll)\n");
-    else if (haveMarker || inGame.chrisware)
+    else if (haveMarker || inGame.ours)
         Out("Installed: yes, %s%s%s\n", inGame.what.c_str(), haveMarker ? ", since " : "",
             haveMarker ? Field(marker, "time").c_str() : "");
     else Out("Installed: no; Bin64 has another mod's dinput8.dll (it is set aside while you play)\n");
-    if ((haveMarker || inGame.chrisware) && inGame.present && !GameRunning())
+    if ((haveMarker || inGame.ours) && inGame.present && !GameRunning())
         Out("[!] the mod is still in the game folder (a crash, or `install`).\n"
             "    Run `sc-offline.exe uninstall` before going online.\n");
 
@@ -656,14 +655,14 @@ int wmain(int argc, wchar_t** argv) {
         }
     }
     for (wchar_t& c : command) c = towlower(c);
-    if (command == L"help") { std::printf("sc-offline launcher (ChrisWareOffline %s)\n\n%s", CWO_VERSION, kUsage); return kExitOk; }
+    if (command == L"help") { std::printf("sc-offline launcher %s (%s)\n\n%s", SCO_VERSION, SCO_BASED_ON, kUsage); return kExitOk; }
 
     const wstring here = ExeDir();
     const wstring data = here + L"\\data";
     std::string header = "sc-offline.exe";
     for (int i = 1; i < argc; ++i) header += " " + Narrow(argv[i]);
     OpenLog(data, false, header.c_str());
-    Out("sc-offline launcher (ChrisWareOffline %s)%s\n\n", CWO_VERSION, dry ? " - dry run, nothing is changed" : "");
+    Out("sc-offline launcher %s%s\n\n", SCO_VERSION, dry ? " - dry run, nothing is changed" : "");
 
     Config cfg;
     if (!ReadConfig(here + L"\\sc-offline.ini", cfg)) Out("[i] no sc-offline.ini next to this exe; using defaults\n");
@@ -705,7 +704,7 @@ int wmain(int argc, wchar_t** argv) {
             return FailCode(kExitEac, "stopped: Easy Anti-Cheat is active (see above). --skip-eac-check overrides this.");
     }
 
-    // 3. What the mod reads (same names and values launch_offline.bat used).
+    // 3. What the mod reads (the SC_OFFLINE_* variables, see docs/data-files.md).
     const bool play = command == L"play";
     if (play) {
         SetVar(L"SC_OFFLINE_BOOT_MAP", cfg.bootMap);

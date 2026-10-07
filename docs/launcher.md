@@ -28,9 +28,9 @@ Everything the launcher prints also goes to `data\launcher.log` (rewritten each 
 
 ## Checks it runs every time
 
-1. **Which DLL.** The SHA-256 of the `dinput8.dll` next to the exe, and what it is: a source build (with its
-   version), the original author's prebuilt DLL, or unknown. With the prebuilt DLL it warns unless
-   `boot_map = PU`.
+1. **Which DLL.** The SHA-256 of the `dinput8.dll` next to the exe, and what it is: an sc-offline build
+   (with its version), an older ChrisWareOffline build, or unknown. With the original author's prebuilt
+   DLL it warns unless `boot_map = PU`.
 2. **Game updated?** The game version from `<channel>\build_manifest.id` (or `StarCitizen.exe`'s size and date),
    compared with `data\game-build.txt` from your last play. If it changed, a game update may have broken the mod.
 3. **Leftovers.** If the mod is still in the game folder while the game isn't running (a crash, or `install`), it
@@ -71,6 +71,6 @@ Each line is `key = value`. Lines starting with `#` are comments. An unknown key
 | --- | --- | --- |
 | `game` | (search all drives) | Your Star Citizen folder. You can point at `Roberts Space Industries`, at `StarCitizen`, or at the channel folder. |
 | `channel` | `LIVE` | Which install to use when `game` points above it: `LIVE`, `PTU`, `EPTU`, and so on. |
-| `boot_map` | `PU_All` | `PU_All` loads every star system, so Travel can reach Pyro and Nyx. Use `PU` with the prebuilt repo-root DLL. |
+| `boot_map` | `PU_All` | `PU_All` loads every star system, so Travel can reach Pyro and Nyx. |
 | `start_ship` | `DRAK_Cutlass_Black` | The ship you start in. |
 | `start` | (empty) | `Daymar` starts you over Daymar, in that ship. |

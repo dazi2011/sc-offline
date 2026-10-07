@@ -63,6 +63,6 @@ Background image settings. Save a picture as `data/menu_background.png` (or `.jp
 
 Everything the mod does is written to `data/mod.log`. The first line of the file is the version.
 
-## Upstream items still to confirm
+## Items still to confirm in game
 
-Upstream 0.9.0-rc1 flags these as built after its last in-game test: the energy-weapon top-up, NPC deletion through the entity handle, Stand up, the real-building prefab preview, and Pyro and Nyx names after a fresh scan.
+ChrisWareOffline 0.9.0-rc1 flagged these as built after its last in-game test: the energy-weapon top-up, NPC deletion through the entity handle, Stand up, the real-building prefab preview, and Pyro and Nyx names after a fresh scan.

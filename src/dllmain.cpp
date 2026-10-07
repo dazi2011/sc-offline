@@ -175,8 +175,8 @@ static void RunMainThreadService() {
 static DWORD WINAPI ModThread(LPVOID param) {
     HMODULE self = static_cast<HMODULE>(param);
     OpenConsole();
-    Log("ChrisWareOffline v" CWO_VERSION);
-    Log("Join our Discord server https://discord.gg/bUAuKMJUJs");
+    Log(SCO_TITLE " (" SCO_BASED_ON ")");
+    Log("Bug reports: https://github.com/scubamount/sc-offline/issues");
 
     HMODULE game = GetModuleHandleW(kTargetModule);
     if (!game) game = GetModuleHandleW(nullptr);

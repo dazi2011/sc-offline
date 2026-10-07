@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.2.0-rc5 (unreleased)
+## 0.3.0 (unreleased)
+
+- **Renamed to sc-offline.** The original ChrisWareOffline project has shut down; this is now an independent project based on ChrisWareOffline 0.9.0-rc1 (GPL-3.0). Window title, menu title, `mod.log` and the launcher say sc-offline. Removed the original project's Discord links.
+- One version number for the DLL and launcher (`SCO_VERSION` in `src/version.h`), replacing `0.9.0-rc1 / sc-offline …`. The launcher still recognizes older builds when checking or uninstalling.
+- Removed the original author's prebuilt `dinput8.dll` from the repository root. Its source was never published and no release used it.
+- Solution and project renamed: `sc-offline.slnx`, `src/sc-offline-dll.vcxproj`.
+- Bug reports now go to GitHub Issues, with a template asking for the logs.
+
+## 0.2.0-rc5 (2026-10-07)
 
 - Removed `data/scripts/` (229 Star Citizen Subsumption mission XML files) and rewrote the repository history so no commit contains them. They are CIG's content and are not ours to distribute.
 - `contract_scripts.txt` now lists only the 796 contracts that need no mission script; contracts that depended on the removed scripts are no longer offered.

@@ -1,4 +1,4 @@
-# Star Citizen Offline Mod (ChrisWareOffline)
+# sc-offline — Star Citizen offline mod
 
 <img src="images/banner.webp" alt="Star Citizen Offline Mod — offline single-player mod menu for Star Citizen" width="100%">
 
@@ -64,10 +64,6 @@ The launcher searches every drive for `Roberts Space Industries\StarCitizen`. If
 
 What's in each menu tab: [docs/features.md](docs/features.md).
 
-## Which DLL do I run?
-
-`sc-offline.exe` copies the `dinput8.dll` that sits next to it, and that's the mod you play. The release zip contains the one CI builds from `src/`. The `dinput8.dll` at the repo root is a different binary: the original author's prebuilt DLL, kept for reference. If you want to swap it in, see [docs/build.md](docs/build.md#the-prebuilt-dll).
-
 ## Update
 
 1. Close the game.
@@ -109,11 +105,8 @@ What's in each menu tab: [docs/features.md](docs/features.md).
 
 ## Credits
 
-**ChrisWareOffline** is **Chris Ware**'s mod:
+sc-offline is **based on ChrisWareOffline 0.9.0-rc1** by Chris Ware and cloudyyrust (GPL-3.0). The original project has been shut down and its repository removed; this repository is maintained independently and is not endorsed by its authors.
 
-- Source and issue tracker: <https://github.com/trionic1/chrisware-project> (GPL-3.0)
-- Upstream Discord: <https://discord.gg/979RRuMjDP>
-
-This repository carries upstream's source (merged through 0.9.0-rc1), the launcher, CI and releases, and the Squadron 42 tab. It is licensed under GPL-3.0; see [LICENSE](LICENSE).
+This repository adds the launcher, CI and releases, the Squadron 42 tab and later fixes. It is licensed under GPL-3.0; see [LICENSE](LICENSE). Report bugs on [Issues](https://github.com/scubamount/sc-offline/issues).
 
 AI was used in a limited way to make this project. It's a fan project, not made by or affiliated with Cloud Imperium Games or Roberts Space Industries. Star Citizen is a trademark of Cloud Imperium Games.

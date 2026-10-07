@@ -924,8 +924,8 @@ static void DrawMenuTab() {
     }
 
     Section("About");
-    Hint("ChrisWareOffline v" CWO_VERSION " is a work in progress.");
-    Hint("Discord: discord.gg/bUAuKMJUJs");
+    Hint(SCO_TITLE " is a work in progress, " SCO_BASED_ON ".");
+    Hint("Bug reports: github.com/scubamount/sc-offline/issues");
 }
 
 // =============================================================================================
@@ -1158,7 +1158,7 @@ static bool DrawMenu() {
     DrawBackdrop();
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::Begin("ChrisWareOffline v" CWO_VERSION "###main", &keepOpen,
+    ImGui::Begin(SCO_TITLE "###main", &keepOpen,
                  ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
                  | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
 
@@ -1193,7 +1193,7 @@ static DWORD WINAPI MenuThread(LPVOID) {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.lpszClassName = L"starcitzenofflinemods_menu";
     RegisterClassExW(&wc);
-    g_wnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, wc.lpszClassName, L"ChrisWareOffline", WS_POPUP,
+    g_wnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, wc.lpszClassName, L"sc-offline", WS_POPUP,
                             100, 100, kMenuW, kMenuH, nullptr, nullptr, wc.hInstance, nullptr);
     if (!g_wnd || !CreateDevice()) return 0;
 

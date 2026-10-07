@@ -12,8 +12,6 @@ launcher/x64/
 *.exp
 *.lib
 *.dll
-# ...except the original author's prebuilt DLL, tracked on purpose (see README).
-!/dinput8.dll
 *.tlog/
 *.log
 
