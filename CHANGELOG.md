@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0-rc5 (unreleased)
+
+- Removed `data/scripts/` (229 Star Citizen Subsumption mission XML files) and rewrote the repository history so no commit contains them. They are CIG's content and are not ours to distribute.
+- `contract_scripts.txt` now lists only the 796 contracts that need no mission script; contracts that depended on the removed scripts are no longer offered.
+- Earlier release zips (rc2 to rc4) contained those files and were withdrawn.
+
 ## sc-offline 0.2.0-rc4 — 2026-10-06
 
 Second parity pass against the original author's DLL (REA 4.1.0 + Ghidra), a launcher with

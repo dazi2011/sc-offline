@@ -41,7 +41,9 @@ Spawn any of 2239 NPC archetypes in front of you, and remove them again (`npcs.t
 
 ## Contracts
 
-`contract_scripts.txt` lists 2153 contracts. A contract can only run when every mission script it needs ships in `data/scripts/`, and **1657** of them meet that today. The mobiGlas list is shorter again, because it also leaves out Pyro and Nyx contracts and anything named test, debug or tutorial. With the shipped files, **491** contracts are offered (`src/contracts.cpp` `Listable`). `mod.log` records the counts at startup: `[contracts] N contracts known; M run ...`.
+`contract_scripts.txt` lists the 796 contracts that run without any of CIG's mission scripts (hauling and similar). The mobiGlas list leaves out Pyro and Nyx contracts and anything named test, debug or tutorial (`src/contracts.cpp` `Listable`). `mod.log` records the counts at startup: `[contracts] N contracts known; M run ...`.
+
+This repository ships none of CIG's Subsumption mission scripts. Contracts that need them (bounty, delivery-with-combat, salvage and others) are not offered.
 
 ## Squadron 42
 

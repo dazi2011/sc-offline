@@ -12,8 +12,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `buildables.txt` | 3728 objects in 18 groups, for Build mode and the Squadron 42 Spawn section |
 | `outfits.txt` | 35 outfits: each is a `[name]` line, then one line per piece |
 | `locations.txt` | Places for the Travel tab: system, name, entity, radius |
-| `contract_scripts.txt` | 2153 contracts, each with the mission scripts it needs. Only contracts whose scripts are all present can run (1657 with the shipped `scripts/`); see [features.md](features.md#contracts). |
-| `scripts/` | The mission scripts that `contract_scripts.txt` points to |
+| `contract_scripts.txt` | The 796 contracts that run without any CIG mission script; see [features.md](features.md#contracts). |
 | `OfflineDB/default_1.xml` | The starting loadout. The launcher copies it to `user\client\0` |
 
 ## Files the mod creates
