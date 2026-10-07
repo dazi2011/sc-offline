@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-10-07)
 
 - **Renamed to sc-offline.** The original ChrisWareOffline project has shut down; this is now an independent project based on ChrisWareOffline 0.9.0-rc1 (GPL-3.0). Window title, menu title, `mod.log` and the launcher say sc-offline. Removed the original project's Discord links.
 - One version number for the DLL and launcher (`SCO_VERSION` in `src/version.h`), replacing `0.9.0-rc1 / sc-offline …`. The launcher still recognizes older builds when checking or uninstalling.
