@@ -338,9 +338,9 @@ static bool PrepareRetrieveVehicle(uint8_t* target) {
         || !BytesMatch(cmd + 0xA9, "E8") || !BytesMatch(cmd + 0x190, "E8"))
         return false;
     g_getATCComp       = reinterpret_cast<GetATCCompFn>(target + 0xDD + 5 + Rel32(target + 0xDE));
-    g_strCtor          = reinterpret_cast<StrCtorFn>(cmd + 0x72 + 5 + Rel32(cmd + 0x73));
-    g_strDtor          = reinterpret_cast<StrDtorFn>(cmd + 0xA9 + 5 + Rel32(cmd + 0xAA));
-    g_requestTakingOff = reinterpret_cast<RequestTakingOffFn>(cmd + 0x190 + 5 + Rel32(cmd + 0x191));
+    g_strCtor          = reinterpret_cast<StrCtorFn>(const_cast<uint8_t*>(cmd + 0x72 + 5 + Rel32(cmd + 0x73)));
+    g_strDtor          = reinterpret_cast<StrDtorFn>(const_cast<uint8_t*>(cmd + 0xA9 + 5 + Rel32(cmd + 0xAA)));
+    g_requestTakingOff = reinterpret_cast<RequestTakingOffFn>(const_cast<uint8_t*>(cmd + 0x190 + 5 + Rel32(cmd + 0x191)));
     return true;
 }
 
