@@ -1,7 +1,7 @@
 #pragma once
 #include <windows.h>
 
-struct MenuShip { char name[64]; int size; float length; };
+struct MenuShip { char name[64]; char display[192]; int size; float length; };
 
 int             Menu_ShipCount();
 const MenuShip* Menu_Ships();

@@ -385,7 +385,7 @@ bool Travel_Scanning(float& progress) {
 }
 
 static void StartScan(DWORD now) {
-    if (g_scan.active) { SetMenuStatus("A scan is already running."); return; }
+    if (g_scan.active) { SetMenuStatus("扫描已经在进行中。"); return; }
     g_scan = {};
     g_scan.active = true;
     g_scan.next = g_scan.lastHit = kStaticIdBase;
@@ -393,7 +393,7 @@ static void StartScan(DWORD now) {
     AcquireSRWLockShared(&g_travelLock);
     g_scan.newFrom = g_placeCount;
     ReleaseSRWLockShared(&g_travelLock);
-    SetMenuStatus("Scanning for places...");
+    SetMenuStatus("正在扫描地点...");
 }
 
 // What the scan learns about one entity. Kept apart from the bookkeeping so the fenced reads have
@@ -444,7 +444,7 @@ static void FinishScan(DWORD now) {
     Log("[travel] scan: ids %llu..%llu, %d entities, %d zone hosts (%d ships skipped, %d too deep), %d new places, %.1f s",
         static_cast<unsigned long long>(kStaticIdBase), static_cast<unsigned long long>(g_scan.lastHit), g_scan.entities,
         g_scan.zones, g_scan.ships, g_scan.deep, n, (now - g_scan.start) / 1000.0);
-    SetMenuStatus("Scan finished: %d new place%s.", n, n == 1 ? "" : "s");
+    SetMenuStatus("扫描完成：新增 %d 个地点%s。", n, "");
 }
 
 static void StepScan(DWORD now) {
@@ -488,7 +488,7 @@ static const char* GoToPlace(const TravelPlace& p, float altitude) {
     uintptr_t entity;
     uint64_t id;
     if (!FindEntityByNameEx(p.entity, entity, id))
-        return "isn't loaded - it may be in another system, or the name in the list is wrong (try the scan)";
+        return "未加载：它可能在其他星系，或者列表里的名称有误（可以试试扫描）";
     uintptr_t zone = 0;
     __try { zone = VCall<uintptr_t>(entity, 0x6E0); } __except (EXCEPTION_EXECUTE_HANDLER) { zone = 0; }
     if (zone) {
@@ -501,7 +501,7 @@ static const char* GoToPlace(const TravelPlace& p, float altitude) {
         const double local[3] = { 0, 0, height };
         return TeleportIntoZone(zone, local);
     }
-    if (!id) return "found, but it has no id to teleport to";
+    if (!id) return "已找到，但没有可传送的目标 ID";
     return TeleportToEntity(id, altitude < 50 ? altitude : 50);
 }
 
@@ -515,24 +515,24 @@ static void HandleRequest(DWORD now) {
     case Req_Place: {
         if (const char* err = GoToPlace(req.place, req.altitude)) SetMenuStatus("%s %s.", req.place.name, err);
         else if (req.place.radius > 0)
-            SetMenuStatus("Teleported to %s, %.0f m above the surface.", req.place.name, req.altitude);
+            SetMenuStatus("已传送到 %s，离地 %.0f 米。", req.place.name, req.altitude);
         else if (req.place.kind != Place_Other)
-            SetMenuStatus("Teleported to %s. Its size isn't known, so you're in orbit - fly in from here.", req.place.name);
+            SetMenuStatus("已传送到 %s。不知道它的大小，所以把你放在了轨道上，请从这里飞过去。", req.place.name);
         else
-            SetMenuStatus("Teleported to %s.", req.place.name);
+            SetMenuStatus("已传送到 %s。", req.place.name);
         break;
     }
     case Req_Bookmark: {
         if (req.index < 0 || req.index >= g_markCount) break;
         const TravelBookmark mark = g_marks[req.index];
-        if (const char* err = GoToSpot(g_markSpots[req.index], now, "bookmark")) SetMenuStatus("Can't go to '%s': %s.", mark.name, err);
-        else SetMenuStatus("Teleported to '%s'.", mark.name);
+        if (const char* err = GoToSpot(g_markSpots[req.index], now, "bookmark")) SetMenuStatus("无法前往“%s”：%s。", mark.name, err);
+        else SetMenuStatus("已传送到“%s”。", mark.name);
         break;
     }
     case Req_Save: {
         Spot s;
-        if (const char* err = CaptureCurrentSpot(s)) { SetMenuStatus("Couldn't save this spot: %s.", err); break; }
-        if (g_markCount >= kMaxBookmarks) { SetMenuStatus("You have %d saved spots; delete one first.", kMaxBookmarks); break; }
+        if (const char* err = CaptureCurrentSpot(s)) { SetMenuStatus("无法保存当前位置：%s。", err); break; }
+        if (g_markCount >= kMaxBookmarks) { SetMenuStatus("你已经保存了 %d 个位置，请先删除一个。", kMaxBookmarks); break; }
         TravelBookmark mark = {};
         SpotSystemName(s, mark.system, sizeof(mark.system));
         if (!mark.system[0]) strcpy_s(mark.system, "Unknown system");
@@ -544,7 +544,7 @@ static void HandleRequest(DWORD now) {
         ++g_markCount;
         ReleaseSRWLockExclusive(&g_travelLock);
         SaveBookmarks();
-        SetMenuStatus("Saved '%s' (%s).", mark.name, mark.system);
+        SetMenuStatus("已保存“%s”（%s）。", mark.name, mark.system);
         break;
     }
     case Req_Delete: {
@@ -556,7 +556,7 @@ static void HandleRequest(DWORD now) {
         --g_markCount;
         ReleaseSRWLockExclusive(&g_travelLock);
         SaveBookmarks();
-        SetMenuStatus("Deleted '%s'.", name);
+        SetMenuStatus("已删除“%s”。", name);
         break;
     }
     case Req_Scan:
