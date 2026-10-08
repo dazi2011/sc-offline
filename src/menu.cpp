@@ -1090,7 +1090,7 @@ static void DrawSq42Tab(bool& keepOpen) {
         if (ImGui::Checkbox(Menu_S42SettingLabel(i), &on)) Menu_RequestS42Setting(i, on);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", known ? Menu_S42SettingTip(i) : "Reading this setting from the game...");
+            ImGui::SetTooltip("%s", known ? Menu_S42SettingTip(i) : "正在从游戏读取此设置...");
         ImGui::PopID();
     }
 
@@ -1198,7 +1198,7 @@ static void DrawSq42Tab(bool& keepOpen) {
             ImGui::PushID(i);
             const bool have = known(list[i].cls);
             if (ImGui::Selectable(list[i].label, i == pick, have ? 0 : ImGuiSelectableFlags_Disabled)) pick = i;
-            if (!have) ImGui::SetItemTooltip("%s isn't in this game build's ship list.", list[i].cls);
+            if (!have) ImGui::SetItemTooltip("当前游戏版本的飞船列表里没有 %s。", list[i].cls);
             if (i == pick) ImGui::SetItemDefaultFocus();
             ImGui::PopID();
         }
