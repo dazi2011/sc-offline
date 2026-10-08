@@ -95,6 +95,11 @@ static PatchStatus PatchMegamapCase(const Section& text, const Section& rdata) {
     return st;
 }
 
+// Set once the frontend request really asks for MegaMap.PU_All (not the PU fallback), so every
+// star system loads.
+static bool g_bootAllSystems = false;
+bool AllSystemsBooted() { return g_bootAllSystems; }
+
 static bool BootIntoAllSystems() {
     char value[16] = {};
     const DWORD n = GetEnvironmentVariableA("SC_OFFLINE_BOOT_MAP", value, sizeof(value));
@@ -133,6 +138,7 @@ static PatchStatus PatchBootIntoPU(const Section& text, const Section& rdata) {
     if (!WriteCode(site, patched, sizeof(patched), st.err)) { st.result = PatchResult::ProtectFailed; return st; }
     st.result = PatchResult::Applied;
     st.at = site;
+    g_bootAllSystems = allMap != nullptr;
     return st;
 }
 
@@ -451,6 +457,8 @@ void LogOfflinePatches() {
     LogPatch("megamap keeps record-name case", g_megamapCasePatch);
     if (g_bootIntoPUPatch.result == PatchResult::NotRun)
         Log("[-] boot into PU: off (set SC_OFFLINE_BOOT_MAP=PU to enable)");
+    else if (BootIntoAllSystems() && g_bootIntoPUPatch.result == PatchResult::Applied && !g_bootAllSystems)
+        LogPatch("boot into PU, Stanton only (MegaMap.PU_All not found; frontend request -> PU/SC_Default)", g_bootIntoPUPatch);
     else if (BootIntoAllSystems())
         LogPatch("boot into PU, every system (frontend request -> PU_All/SC_Default)", g_bootIntoPUPatch);
     else

@@ -6,6 +6,7 @@
 #include "menu.h"
 #include "build.h"
 #include "npc.h"
+#include "patches.h"
 #include <intrin.h>
 #include <share.h>
 #include <cmath>
@@ -2324,8 +2325,10 @@ static const Scripted* ScriptedOf(const uint8_t id[16]) {
     return nullptr;
 }
 
+// Pyro and Nyx contracts need their star system loaded, which only the PU_All boot map does.
 static bool Listable(const Def& d) {
-    if (ContainsNoCase(d.name, "Pyro") || ContainsNoCase(d.name, "Nyx") || ContainsNoCase(d.name, "NOTFORRELEASE")) return false;
+    if (ContainsNoCase(d.name, "NOTFORRELEASE")) return false;
+    if (!AllSystemsBooted() && (ContainsNoCase(d.name, "Pyro") || ContainsNoCase(d.name, "Nyx"))) return false;
     const Scripted* s = ScriptedOf(d.id);
     return s && s->runs;
 }
@@ -2373,7 +2376,8 @@ static void Fill(int count) {
     }
     int known = 0;
     for (int i = 0; i < g_defCount; ++i) known += ScriptedOf(g_defs[i].id) != nullptr;
-    Log("[contracts] %d of the generator's %d contracts are in contract_scripts.txt%s", known, g_defCount, g_scriptedSwapped ? " (ids matched swapped)" : "");
+    Log("[contracts] %d of the generator's %d contracts are in contract_scripts.txt%s; Pyro and Nyx contracts %s", known, g_defCount,
+        g_scriptedSwapped ? " (ids matched swapped)" : "", AllSystemsBooted() ? "listed (PU_All)" : "left out (Stanton only)");
     for (int i = n - 1; i > 0; --i) { const int j = rand() % (i + 1); const int t = order[i]; order[i] = order[j]; order[j] = t; }
     char path[MAX_PATH];
     if (ModLogSibling(path, MAX_PATH, "list_first.txt")) {
