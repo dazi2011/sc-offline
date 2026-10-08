@@ -1,14 +1,25 @@
 # 简体中文支持
 
-本分支在 `scubamount/sc-offline@60a4ef6d` 的源码上加入了简体中文：
+本分支（`zh-cn`）在 `scubamount/sc-offline` 0.7.0 的源码上加入了简体中文：
 
-- **菜单汉化**：菜单、按钮、提示和状态栏都是简体中文。
-- **中文字体**：依次尝试 `data\font_zh.ttf` / `data\font_zh.ttc`、macOS 的 `Hiragino Sans GB.ttc`
-  （在 Wine/CrossOver 里经 `Z:` 盘读取）、Windows 的微软雅黑 / 黑体。想换字体，把字体文件放成
-  `data\font_zh.ttf` 即可。
+- **菜单汉化**：菜单、按钮、提示和状态栏都是简体中文（`mod.log`、配置键、文件名、类名不翻译）。
+- **中文字体**：依次尝试 `data\font_zh.ttf` / `data\font_zh.ttc`、macOS 的 `Hiragino Sans GB.ttc` /
+  `STHeiti Medium.ttc`（在 Wine/CrossOver 里经 `Z:` 盘读取）、Windows 的微软雅黑 / 黑体；都找不到时只用英文字体。
+  想换字体，把字体文件放成 `data\font_zh.ttf` 即可。
 - **中文船名**：“载具”页按 `data\ship_names_zh.txt`（每行 `代号|中文名`）显示，鼠标悬停显示原始代号，
   搜索时中文名和代号都能匹配。刷船仍然使用原始代号。
-- **中文地名**：“传送”页按 `data\place_names_zh.txt` 显示星系、行星、卫星、拉格朗日点和跳跃点的中文名。
+- **中文地名**：“传送”页按 `data\place_names_zh.txt` 显示星系、行星、卫星、拉格朗日点、跳跃点以及扫描到的
+  小地点的中文名。传送仍然使用原始实体名。
+- **跨星系传送**：列表里的地点可以跨星系传送（实验功能，需用 `PU_All` 启动）；只有找不到目标所在星系时才报错。
+
+## 文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `p4k-extract.py` | 只读地从 `Data.p4k`（zip64 + zstd）里解出指定文件 |
+| `gen-sc-offline-zh-names.py` | 用游戏语言包生成 `ship_names_zh.txt` 和 `place_names_zh.txt` |
+| `sc-offline-zh-strings.py` | 菜单文字的中英对照表；套到上游英文 `src/` 的副本上即得到本分支的文字替换，可用来核对漏翻 |
+| `build-macos.sh` | 在 macOS 上不用 MSVC 编译 `dinput8.dll` |
 
 ## 生成中文名文件
 
@@ -27,8 +38,34 @@ python3 tools/zh-cn/gen-sc-offline-zh-names.py loc/Data/Localization <mod 的 da
 在后面用括号说明，例如 `神盾伊德里斯-M（AI·UEE·无内饰）`、`神盾伊德里斯-P（维克洛战争特别版）`。
 游戏更新后重新生成一次即可跟上官方译名。
 
-## 编译
+## 核对菜单文字
 
-除了原有的 Visual Studio 工程，也可以不用微软 SDK，在 macOS/Linux 上用 clang 的 MinGW 模式交叉编译：
-`clang++ --target=x86_64-w64-mingw32 --sysroot=<mingw-w64 sysroot> -std=c++20 -O2 -fms-extensions -mcrc32 ...`，
-再用 LLD 链接成 `dinput8.dll`。
+上游加了新文字后，可以把对照表套到上游源码的副本上，再和本分支比较，剩下的差异应当只有船名/地名/字体/传送这些代码改动：
+
+```bash
+mkdir -p /tmp/up && git archive upstream/main src | tar -x -C /tmp/up
+python3 tools/zh-cn/sc-offline-zh-strings.py /tmp/up/src   # 找不到的字面量会全部列出
+diff -ru -x third_party /tmp/up/src src
+```
+
+翻译时注意：MinGW 的 printf 不支持位置参数（`%2$s`），中文需要调换语序时改代码里实参的顺序。
+
+## 编译（macOS）
+
+```bash
+tools/zh-cn/build-macos.sh
+```
+
+用 Homebrew 的 clang（MinGW 模式）+ mingw-w64 sysroot + Rust 工具链自带的 LLD，产物在 `build/zh-cn/dinput8.dll`，
+脚本会检查它是 PE32+ x86-64 DLL、导出了转发到系统 `dinput8.DirectInput8Create` 的 `DirectInput8Create`、
+导入表里没有 MinGW 运行库。源文件列表取自 `src/sc-offline-dll.vcxproj`。工具链路径可以用
+`SC_OFFLINE_CXX`、`SC_OFFLINE_MINGW`、`SC_OFFLINE_RUST_TOOLCHAIN` 覆盖，输出目录用 `SC_OFFLINE_OUT`。
+
+## 与 0.2.0-rc2 相比（给外部启动脚本）
+
+- DLL 仍然叫 `dinput8.dll`，放在 `Bin64`，加载方式不变（Wine 下 `WINEDLLOVERRIDES=dinput8=n,b`）。
+- DLL 读取的环境变量不变：`SC_OFFLINE_SHIPS_FILE`（它所在的目录就是 data 目录，`ship_names_zh.txt`、
+  `place_names_zh.txt`、`font_zh.ttf` 都放这里）、`SC_OFFLINE_MOD_LOG`、`SC_OFFLINE_SPAWN_FILE`、
+  `SC_OFFLINE_START`、`SC_OFFLINE_START_SHIP`、`SC_OFFLINE_BOOT_MAP`。
+- `data/` 的内容变了：`contract_scripts.txt` 重写，`missions.txt` 和 `data/scripts/` 已删除。
+  外部脚本复制 data 目录时要按 0.7.0 的 `data/` 整体同步，不要沿用旧版的文件。
