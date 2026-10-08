@@ -67,5 +67,6 @@ tools/zh-cn/build-macos.sh
 - DLL 读取的环境变量不变：`SC_OFFLINE_SHIPS_FILE`（它所在的目录就是 data 目录，`ship_names_zh.txt`、
   `place_names_zh.txt`、`font_zh.ttf` 都放这里）、`SC_OFFLINE_MOD_LOG`、`SC_OFFLINE_SPAWN_FILE`、
   `SC_OFFLINE_START`、`SC_OFFLINE_START_SHIP`、`SC_OFFLINE_BOOT_MAP`。
-- `data/` 的内容变了：`contract_scripts.txt` 重写，`missions.txt` 和 `data/scripts/` 已删除。
-  外部脚本复制 data 目录时要按 0.7.0 的 `data/` 整体同步，不要沿用旧版的文件。
+- `data/`：上游 0.2.0-rc5 出于版权原因删除了 `data/scripts/`（229 个 CIG 任务脚本），`contract_scripts.txt` 只剩 796 个
+  不需要脚本的合同。本 fork 保留 0.2.0-rc2 的 `data/scripts/` 和完整的 2153 条 `contract_scripts.txt`（新列表是它的子集），
+  除非收到权利人的删除要求。`missions.txt` 已删除（从来没有代码读它）。其余随附数据与 0.2.0-rc2 相同。

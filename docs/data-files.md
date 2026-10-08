@@ -12,7 +12,8 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `buildables.txt` | 3728 objects in 18 groups, for Build mode and the Squadron 42 Spawn section |
 | `outfits.txt` | 35 outfits: each is a `[name]` line, then one line per piece |
 | `locations.txt` | Places for the Travel tab: system, name, entity, radius |
-| `contract_scripts.txt` | The 796 contracts that run without any CIG mission script; see [features.md](features.md#contracts). |
+| `contract_scripts.txt` | 2153 contracts and the mission scripts they run; see [features.md](features.md#contracts). |
+| `scripts/` | 229 Subsumption mission scripts (CIG's XML), loaded in place of the game's own; kept in this fork only |
 | `OfflineDB/default_1.xml` | The starting loadout. The launcher copies it to `user\client\0` |
 
 ## Files the mod creates
