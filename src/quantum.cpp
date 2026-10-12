@@ -128,7 +128,19 @@ static bool SwapPakSlots(bool on) {
     return true;
 }
 
+// SC_OFFLINE_DCB_PATCH=off loads the game data untouched, to rule the patch out when something looks wrong.
+static bool DcbPatchOff() {
+    char value[8] = {};
+    const DWORD n = GetEnvironmentVariableA("SC_OFFLINE_DCB_PATCH", value, sizeof(value));
+    return n > 0 && n < sizeof(value) && _stricmp(value, "off") == 0;
+}
+
 static uintptr_t __fastcall LoadDataCoreHook(uintptr_t loader, uintptr_t path, uintptr_t a3, uintptr_t a4, uintptr_t a5) {
+    if (DcbPatchOff()) {
+        const uintptr_t ok = g_loadDataCoreOrig(loader, path, a3, a4, a5);
+        Log("[-] new quantum drive: off (SC_OFFLINE_DCB_PATCH=off); game data loaded %s untouched", (ok & 0xFF) ? "ok" : "FAILED");
+        return ok;
+    }
     g_dcb.thread = GetCurrentThreadId();
     g_dcb.state = 0;
     const bool swapped = SwapPakSlots(true);
