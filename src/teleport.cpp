@@ -461,7 +461,12 @@ const char* TeleportIntoZone(uintptr_t zone, const double local[3]) {
         if (!GetLocalPlayer(actor, entity)) return "角色还没有生成";
         const uintptr_t mine = SystemZoneOf(VCall<uintptr_t>(entity, 0x6B8));
         const uintptr_t theirs = SystemZoneOf(zone);
-        if (!theirs || (mine && mine != theirs)) return "那个地点在另一个星系，请先前往那个星系";
+        // With PU_All every star system is loaded, and teleporting into a zone of another system
+        // works (seen on 4.10.1: Stanton -> Pyro I L1 -> Pyro IV). Only refuse when the target's
+        // system is unknown.
+        if (!theirs) return "找不到目标所在的星系";
+        if (mine && mine != theirs)
+            Log("[tp] crossing star systems: %s -> %s", ZoneName(mine) ? ZoneName(mine) : "?", ZoneName(theirs) ? ZoneName(theirs) : "?");
         const uint64_t zoneId = ZoneId(zone);
         if (!zoneId || ZoneFromId(zoneId) != zone) return "区域 ID 不匹配";
         double world[3];
