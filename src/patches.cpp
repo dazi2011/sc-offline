@@ -320,6 +320,10 @@ static PatchStatus g_serviceStreamsPatch;
 static PatchStatus g_remoteConsolePatch;
 static PatchStatus g_profilerServerPatch;
 
+// SC_OFFLINE_BOOT_MAP=PU_All and its patch went in, so every star system loads. Without the
+// offline.boot_pu_all rows the boot isn't patched at all.
+bool AllSystemsBooted() { return BootIntoAllSystems() && g_bootIntoPUPatch.result == PatchResult::Applied; }
+
 bool ApplyOfflinePatches() {
     const Section text = FindSection(".text"), rdata = FindSection(".rdata");
     if (!text.base || !rdata.base) { g_isOnlinePatch.result = PatchResult::NotFound; return false; }

@@ -5,6 +5,7 @@ extern const uint8_t* g_isOnlineFlag;
 
 bool ApplyOfflinePatches();
 void LogOfflinePatches();
+bool AllSystemsBooted();   // the PU_All boot map went in: Pyro and Nyx are loaded too
 // Sets capability `name` (sco/game/offline.h, or features' offline.or_loop_bound) from its rows
 // with sco::caps::SetFromSignatures; true when it is ready.
 bool OfflineCapReady(const char* name);
