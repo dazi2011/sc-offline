@@ -418,6 +418,30 @@ static int BuildMenuShips() {
         if (a.length != b.length) return a.length > b.length;
         return _stricmp(a.name, b.name) < 0;
     });
+
+    // Display names (UTF-8) from data\ship_names_zh.txt: "class|name" per line. Only the menu
+    // shows them; spawning still uses the class name. A missing file keeps the class names.
+    for (int i = 0; i < n; ++i) strncpy_s(g_menuShips[i].display, g_menuShips[i].name, _TRUNCATE);
+    if (DataFilePath(path, sizeof(path), "ship_names_zh.txt")) {
+        if (FILE* names = _fsopen(path, "r", _SH_DENYNO)) {
+            char entry[512];
+            int named = 0;
+            while (fgets(entry, sizeof(entry), names)) {
+                entry[strcspn(entry, "\r\n")] = 0;
+                char* sep = strchr(entry, '|');
+                if (entry[0] == '#' || !sep || sep == entry || !sep[1]) continue;
+                *sep = 0;
+                for (int i = 0; i < n; ++i)
+                    if (_stricmp(g_menuShips[i].name, entry) == 0) {
+                        strncpy_s(g_menuShips[i].display, sep + 1, _TRUNCATE);
+                        ++named;
+                        break;
+                    }
+            }
+            fclose(names);
+            Log("[ship] %d of %d ships have a display name from ship_names_zh.txt", named, n);
+        }
+    }
     return n;
 }
 
@@ -1504,24 +1528,25 @@ void ProcessShipMenu(DWORD now) {
         }
     } else if (req.pending && req.index >= 0 && req.index < g_menuShipCount) {
         const char* name = g_menuShips[req.index].name;
+        const char* shown = g_menuShips[req.index].display[0] ? g_menuShips[req.index].display : name;
         const MenuSpawnOptions& o = req.opt;
         uint64_t id = 0;
         if (const char* err = SpawnShipAbovePlayer(name, o.height, id)) {
-            SetMenuStatus("生成 %s 失败：%s", name, err);
+            SetMenuStatus("生成 %s 失败：%s", shown, err);
         } else {
             SetTarget(id, name);
             switch (o.seatMode) {
             case SeatMode_None:
-                SetMenuStatus("正在你上方 %.0f 米处生成 %s（大船最多需要一分钟）。", o.height, name);
+                SetMenuStatus("正在你上方 %.0f 米处生成 %s（大船最多需要一分钟）。", o.height, shown);
                 break;
             case SeatMode_PickLater:
-                SetMenuStatus("正在生成 %s，加载完成后请在“船员”页选择座位。", name);
+                SetMenuStatus("正在生成 %s，加载完成后请在“船员”页选择座位。", shown);
                 break;
             default: {
                 const bool named = o.seatMode == SeatMode_Named && o.seatName[0];
                 StartSeatJob(id, name, named ? SeatMode_Named : SeatMode_Pilot, o.seatName, o.replaceNpc, o.flightReady, 0, now);
-                if (named) SetMenuStatus("正在生成 %s，生成后会把你安排到“%s”座位。", name, o.seatName);
-                else SetMenuStatus("正在生成 %s，生成后会立即安排你坐上驾驶座（大船最多需要一分钟）。", name);
+                if (named) SetMenuStatus("正在生成 %s，生成后会把你安排到“%s”座位。", shown, o.seatName);
+                else SetMenuStatus("正在生成 %s，生成后会立即安排你坐上驾驶座（大船最多需要一分钟）。", shown);
                 break;
             }
             }

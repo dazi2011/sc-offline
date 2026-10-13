@@ -24,7 +24,7 @@ void DrawVehiclesTab(void*, void*) {
         if (selected >= count) selected = 0;
         if (SearchBox("##shipFilter", "搜索飞船（中文名或代号）", filter, sizeof(filter)))
             for (int i = 0; i < count; ++i)
-                if (MatchesFilter(ships[i].name, filter)) { selected = i; break; }
+                if (MatchesFilter(ships[i].display, filter) || MatchesFilter(ships[i].name, filter)) { selected = i; break; }
         const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter
                                     | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
         if (ImGui::BeginTable("##ships", 3, flags, ImVec2(0, 230))) {
@@ -34,12 +34,13 @@ void DrawVehiclesTab(void*, void*) {
             ImGui::TableSetupColumn("长度", ImGuiTableColumnFlags_WidthFixed, 64);
             ImGui::TableHeadersRow();
             for (int i = 0; i < count; ++i) {
-                if (!MatchesFilter(ships[i].name, filter)) continue;
+                if (!MatchesFilter(ships[i].display, filter) && !MatchesFilter(ships[i].name, filter)) continue;
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
-                char label[96];
-                snprintf(label, sizeof(label), "%s##s%d", ships[i].name, i);
+                char label[240];
+                snprintf(label, sizeof(label), "%s##s%d", ships[i].display, i);
                 if (ImGui::Selectable(label, i == selected, ImGuiSelectableFlags_SpanAllColumns)) selected = i;
+                ImGui::SetItemTooltip("%s", ships[i].name);
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("%d", ships[i].size);
                 ImGui::TableNextColumn();
@@ -66,8 +67,8 @@ void DrawVehiclesTab(void*, void*) {
         ImGui::SetItemTooltip("坐上驾驶座后自动启动飞船电源。");
         ImGui::EndDisabled();
 
-        char spawn[96];
-        snprintf(spawn, sizeof(spawn), "生成 %s", ships[selected].name);
+        char spawn[240];
+        snprintf(spawn, sizeof(spawn), "生成 %s", ships[selected].display);
         if (PrimaryButton(spawn)) {
             MenuSpawnOptions send = opt;
             if (!boarding) send.flightReady = false;

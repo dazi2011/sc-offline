@@ -1,7 +1,8 @@
 #pragma once
 #include <windows.h>
 
-struct MenuShip { char name[64]; int size; float length; };
+// display: the name the menu shows (data\ship_names_zh.txt, else the class name); spawning uses name.
+struct MenuShip { char name[64]; char display[192]; int size; float length; };
 
 int             Menu_ShipCount();
 const MenuShip* Menu_Ships();
