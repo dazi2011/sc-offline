@@ -92,7 +92,7 @@ void DrawPlayerTab(void*, void*) {
     if (ImGui::Checkbox("无敌模式", &god)) InvokeCreativeToggle("creative.god", god, &god);
     ImGui::SameLine(0, 24);
     if (ImGui::Checkbox("无限弹药", &ammo)) InvokeCreativeToggle("creative.ammo", ammo, &ammo);
-    Hint("穿墙飞行、无敌模式和无限弹药由 creative 插件提供，默认关闭：删除 data\\plugins\\creative 里名为 disabled 的文件，并打开插件总开关（sc-offline.ini 的 plugins = on，或环境变量 SC_OFFLINE_PLUGINS=on），重启游戏后即可使用。");
+    Hint("穿墙飞行、无敌模式和无限弹药由 creative 插件提供，本版默认开启（还需插件总开关：sc-offline.ini 的 plugins = on，或环境变量 SC_OFFLINE_PLUGINS=on）。想关掉它，在 data\\plugins\\creative 里放一个名为 disabled 的空文件，然后重启游戏。");
 
     SectionHeading("装备");
     static int  gear[Gear_SlotCount] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };

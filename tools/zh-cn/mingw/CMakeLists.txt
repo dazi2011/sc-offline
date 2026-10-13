@@ -118,8 +118,9 @@ endfunction()
 
 sco_plugin(creative "${SCO_ROOT}/plugins/creative/creative.cpp" "${SCO_ROOT}/data/plugins/creative/plugin.ini")
 sco_plugin(discord "${SCO_ROOT}/plugins/discord/discord.cpp" "${SCO_ROOT}/data/plugins/discord/plugin.ini")
-# The release ships creative off: an empty file named "disabled" next to its plugin.ini.
-file(COPY "${SCO_ROOT}/data/plugins/creative/disabled" DESTINATION "${CMAKE_BINARY_DIR}/data/plugins/creative")
+# Upstream's release ships creative off (an empty "disabled" file next to its plugin.ini); this
+# fork ships it on, so an earlier build's marker goes too.
+file(REMOVE "${CMAKE_BINARY_DIR}/data/plugins/creative/disabled")
 foreach(id npc inspector)
   sco_plugin(${id} "${SCO_ROOT}/plugins/${id}/external.cpp" "${SCO_ROOT}/plugins/${id}/plugin.ini"
     "${SCO_ROOT}/plugins/${id}/${id}.cpp")

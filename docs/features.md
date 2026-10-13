@@ -6,7 +6,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 
 ## Player
 
-- Noclip, god mode, infinite ammo: from the optional [creative plugin](#the-creative-plugin) (shipped off; turn it on in the launcher's Plugins page).
+- Noclip, god mode, infinite ammo: from the optional [creative plugin](#the-creative-plugin) (on by default in this fork; upstream ships it off).
 - Gear menu: equip any of 1489 items, sorted into ten slots (`items.txt`).
 - Wallet: your aUEC balance is loaded when you spawn and saved as it changes, in the contracts built-in's storage (`data/storage/contracts.db`) and in `data/wallet.txt`. The file holds just the number; edit it while the game is closed to change your balance: an edited `wallet.txt` always wins over the stored balance (see [Saves](data-files.md#saves)). Without the file, you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete `wallet.txt` to go back to it.
 
@@ -195,7 +195,7 @@ The [13-feature migration target](decisions.md) is policy, not completion: steps
 
 ### The creative plugin
 
-Noclip, god mode and infinite ammo are not part of `dinput8.dll` any more: they are `data/plugins/creative`, a plain plugin built only from the sco SDK's headers (`plugins/creative/`, CMake target `sc-offline-creative`) on sco-core's `game.creative` service. The folder ships with an empty `disabled` file, so the plugin is **off** until you turn it on in the launcher's Plugins page (and `plugins = on` in `sc-offline.ini`; see [the launcher](launcher.md)). A change applies at the next game start. Unloading the plugin switches every toggle it turned on off again.
+Noclip, god mode and infinite ammo are not part of `dinput8.dll` any more: they are `data/plugins/creative`, a plain plugin built only from the sco SDK's headers (`plugins/creative/`, CMake target `sc-offline-creative`) on sco-core's `game.creative` service. Upstream ships the folder with an empty `disabled` file, so the plugin is **off** until you turn it on in the launcher's Plugins page; this fork (dazi2011/sc-offline) ships it **on**, and an empty `disabled` file there turns it off. Either way it needs `plugins = on` in `sc-offline.ini` (see [the launcher](launcher.md)). A change applies at the next game start. Unloading the plugin switches every toggle it turned on off again.
 
 | Command | Does |
 | --- | --- |

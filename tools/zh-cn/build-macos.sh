@@ -5,8 +5,8 @@
 #
 # Output (SC_OFFLINE_OUT, default build/zh-cn):
 #   dinput8.dll                                  the mod, for the game's Bin64
-#   data/plugins/<id>/<id>.dll + plugin.ini      creative (with its "disabled" marker), discord, npc,
-#                                                inspector: copy into the mod's data\plugins
+#   data/plugins/<id>/<id>.dll + plugin.ini      creative, discord, npc, inspector (all on): copy into
+#                                                the mod's data\plugins
 #   BUILD-INFO.txt                               commits, toolchain, SHA-256 of every DLL
 #
 # Overrides: SC_OFFLINE_LLVM (or SC_OFFLINE_CXX), SC_OFFLINE_MINGW, SC_OFFLINE_RUST_TOOLCHAIN,
@@ -44,7 +44,8 @@ for id in creative discord npc inspector; do
     dlls+=("$OUT/data/plugins/$id/$id.dll")
     [[ -f $OUT/data/plugins/$id/plugin.ini ]] || fail "data/plugins/$id/plugin.ini missing"
 done
-[[ -f $OUT/data/plugins/creative/disabled ]] || fail "data/plugins/creative/disabled missing"
+# This fork ships creative on: no "disabled" marker.
+[[ ! -e $OUT/data/plugins/creative/disabled ]] || fail "data/plugins/creative/disabled present"
 for dll in "${dlls[@]}"; do
     name=${dll#"$OUT/"}
     file "$dll" | grep -q 'PE32+ executable.*(DLL).*x86-64' || fail "$name is not a PE32+ x86-64 DLL"

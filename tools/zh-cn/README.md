@@ -19,6 +19,8 @@
   `mod.log` 记 `[tp] crossing star systems`。F8 和已保存的位置仍只能在当前星系内使用。上游 0.7.7 仍然拒绝跨星系。
 - **任务脚本与完整合同列表**：保留 `data/scripts/`（229 个 CIG 任务脚本）和 2153 条的 `contract_scripts.txt`
   （上游的 796 条是它的子集），除非权利人要求删除。
+- **creative 默认开启**：穿墙飞行、无敌模式、无限弹药（`data\plugins\creative`）不再带 `disabled` 标记，上游默认关闭。
+  “玩家”页的提示相应改写。在该文件夹里放一个空的 `disabled` 文件即可关闭。
 - **派罗/尼克斯合同**：用 `PU_All` 启动且启动补丁生效时，mobiGlas 也列出派罗和尼克斯的合同；`PU` 启动时照旧不列，
   `mod.log` 的 `[contracts]` 行写明是哪种情况。
 
@@ -49,7 +51,7 @@ dinput8 和 ImGui 的源文件列表从顶层 `CMakeLists.txt` 读取（上游�
 | 产物 | 放到哪里 |
 | --- | --- |
 | `dinput8.dll` | 游戏的 `Bin64` |
-| `data/plugins/creative/`（`creative.dll`、`plugin.ini`、`disabled`） | mod 的 `data\plugins\creative\` |
+| `data/plugins/creative/`（`creative.dll`、`plugin.ini`） | mod 的 `data\plugins\creative\` |
 | `data/plugins/discord/`、`data/plugins/npc/`、`data/plugins/inspector/`（各自的 dll 和 `plugin.ini`） | mod 的 `data\plugins\<id>\` |
 | `BUILD-INFO.txt` | 提交号、sco-core 提交号、工具链版本、每个 dll 的 SHA-256 |
 
@@ -105,7 +107,8 @@ git diff --no-index /tmp/up/src src; git diff --no-index /tmp/up/plugins plugins
 
 - **DLL**：仍然叫 `dinput8.dll`，放在 `Bin64`，加载方式不变（Wine 下 `WINEDLLOVERRIDES=dinput8=n,b`）。
 - **data 目录**：仍然是 `SC_OFFLINE_SHIPS_FILE` 所在的目录。新增的子目录：
-  - `data\plugins\<id>\`：插件（`<id>.dll` + `plugin.ini`）。creative 带一个名为 `disabled` 的空文件，删掉它才会加载；
+  - `data\plugins\<id>\`：插件（`<id>.dll` + `plugin.ini`）。本 fork 的 creative 默认开启（上游带一个名为 `disabled` 的
+    空文件，默认关闭）；在它的文件夹里放一个空的 `disabled` 文件即可关闭；
   - `data\builtin\quantum\datacore\quantum_drive.toml`：新量子引擎的数据包（取代 0.7.0 的 `dcb_patch.h` 字节补丁），
     **每次升级都要覆盖**，不能用 `rsync --ignore-existing` 留旧版；
   - `data\storage\*.db`：存档（sco.storage/SQLite），游戏运行时创建，首次运行时导入旧的 `wallet.txt`、`spawn.txt`、

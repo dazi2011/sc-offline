@@ -17,7 +17,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `builtin/quantum/datacore/quantum_drive.toml` | The new quantum drive's game data, applied as the game loads (see [features.md](features.md#logging)) |
 | `OfflineDB/default_1.xml` | The starting loadout. The launcher copies it to `user\client\0` |
 | `plugins\discord\` | The Discord status plugin: `plugin.ini` and `discord.dll`, on by default (see [launcher.md](launcher.md#discord-status)) |
-| `plugins\creative\` | The optional creative plugin: `plugin.ini`, `creative.dll` and an empty `disabled` marker (off until you switch it on in the launcher's Plugins page; see [features.md](features.md#the-creative-plugin)). Other plugins go in their own folder here with `plugins = on` |
+| `plugins\creative\` | The optional creative plugin: `plugin.ini` and `creative.dll`, on by default in this fork (upstream adds an empty `disabled` marker that keeps it off until you switch it on; see [features.md](features.md#the-creative-plugin)). Other plugins go in their own folder here with `plugins = on` |
 
 ## Files the mod creates
 
