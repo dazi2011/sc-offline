@@ -43,8 +43,8 @@ void CrewTabTick(uint32_t now) {
 
 void DrawCrewTab(void*, void*) {
     if (!Menu_SeatControlAvailable()) {
-        SectionHeading("Crew");
-        Hint("Seat control isn't available in this game version. mod.log has the details.");
+        SectionHeading("船员");
+        Hint("当前游戏版本不支持座位控制，详情见 mod.log。");
         return;
     }
     static MenuSeat seats[128];
@@ -54,24 +54,24 @@ void DrawCrewTab(void*, void*) {
     char ship[64] = "";
     const int count = Menu_GetSeats(seats, 128, ship, sizeof(ship));
 
-    SectionHeading("Ship");
-    ImGui::TextUnformatted(count < 0 ? "No ship selected" : ship);
+    SectionHeading("飞船");
+    ImGui::TextUnformatted(count < 0 ? "未选择飞船" : ship);
     ImGui::SameLine();
     const float button = 190;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - button);
-    if (ImGui::Button("Use the ship I'm in", ImVec2(button, 0))) Menu_TargetShipImIn();
-    if (count < 0) { Hint("Spawn a ship, or board one and press 'Use the ship I'm in'."); return; }
-    if (count == 0) { Hint("Waiting for the ship to load..."); return; }
+    if (ImGui::Button("使用我所在的飞船", ImVec2(button, 0))) Menu_TargetShipImIn();
+    if (count < 0) { Hint("先生成一艘飞船，或登上一艘后点“使用我所在的飞船”。"); return; }
+    if (count == 0) { Hint("正在等待飞船加载..."); return; }
 
-    SectionHeading("Seats");
+    SectionHeading("座位");
     PrettySeatNames(seats, count, ship, pretty);
     int sel = -1;
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter
                                 | ImGuiTableFlags_BordersInnerH;
     if (ImGui::BeginTable("##seats", 2, flags, ImVec2(0, 250))) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Seat", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Occupant", ImGuiTableColumnFlags_WidthFixed, 90);
+        ImGui::TableSetupColumn("座位", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("乘员", ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableHeadersRow();
         for (int i = 0; i < count; ++i) {
             ImGui::TableNextRow();
@@ -83,10 +83,10 @@ void DrawCrewTab(void*, void*) {
             if (seats[i].id == selectedSeat) sel = i;
             ImGui::TableNextColumn();
             switch (seats[i].state) {
-            case SeatState_You:   ImGui::TextColored(kLeaf, "You"); break;
+            case SeatState_You:   ImGui::TextColored(kLeaf, "你"); break;
             case SeatState_Npc:   ImGui::TextUnformatted("NPC"); break;
-            case SeatState_Taken: ImGui::TextDisabled("Unknown"); break;
-            default:              ImGui::TextDisabled("Empty"); break;
+            case SeatState_Taken: ImGui::TextDisabled("未知"); break;
+            default:              ImGui::TextDisabled("空"); break;
             }
         }
         ImGui::EndTable();
@@ -95,34 +95,34 @@ void DrawCrewTab(void*, void*) {
     const int state = sel >= 0 ? seats[sel].state : -1;
     const float quarter = Columns(4);
     ImGui::BeginDisabled(sel < 0 || state == SeatState_You);
-    if (ImGui::Button("Sit here", ImVec2(quarter, 0))) Menu_RequestSit(seats[sel].id, replace);
+    if (ImGui::Button("坐这里", ImVec2(quarter, 0))) Menu_RequestSit(seats[sel].id, replace);
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(state != SeatState_Npc && state != SeatState_You);
-    if (ImGui::Button("Stand up", ImVec2(quarter, 0))) Menu_RequestStandUp(seats[sel].id);
-    ImGui::SetItemTooltip("Whoever is in the seat gets up and stays aboard.");
+    if (ImGui::Button("起身", ImVec2(quarter, 0))) Menu_RequestStandUp(seats[sel].id);
+    ImGui::SetItemTooltip("让座位上的人起身，但留在船上。");
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(state != SeatState_Npc);
-    if (ImGui::Button("Remove NPC", ImVec2(quarter, 0))) Menu_RequestKick(seats[sel].id);
-    ImGui::SetItemTooltip("Takes the NPC out of the game.");
+    if (ImGui::Button("移除 NPC", ImVec2(quarter, 0))) Menu_RequestKick(seats[sel].id);
+    ImGui::SetItemTooltip("把这个 NPC 从游戏中移除。");
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(state != SeatState_Empty);
-    if (ImGui::Button("Add NPC", ImVec2(quarter, 0))) Menu_RequestAddCrew(seats[sel].id, g_npcPick);
+    if (ImGui::Button("添加 NPC", ImVec2(quarter, 0))) Menu_RequestAddCrew(seats[sel].id, g_npcPick);
     ImGui::EndDisabled();
-    ImGui::Checkbox("If an NPC is in the seat I pick, remove it", &replace);
+    ImGui::Checkbox("如果选中的座位上有 NPC，先移除它", &replace);
 
-    SectionHeading("Crew");
-    Hint("NPC to add to seats:");
+    SectionHeading("船员");
+    Hint("要安排到座位上的 NPC：");
     const bool haveNpcs = NpcPicker();
     const float third = Columns(3);
     ImGui::BeginDisabled(!haveNpcs);
-    if (ImGui::Button("Fill empty seats", ImVec2(third, 0))) Menu_RequestFillCrew(g_npcPick);
+    if (ImGui::Button("填满空座位", ImVec2(third, 0))) Menu_RequestFillCrew(g_npcPick);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("All NPCs stand up", ImVec2(third, 0))) Menu_RequestStandAll();
+    if (ImGui::Button("所有 NPC 起身", ImVec2(third, 0))) Menu_RequestStandAll();
     ImGui::SameLine();
-    if (ImGui::Button("Remove all NPCs", ImVec2(third, 0))) Menu_RequestClearCrew();
-    Hint("NPCs you add sit in their seats. They don't fly the ship or operate turrets yet.");
+    if (ImGui::Button("移除所有 NPC", ImVec2(third, 0))) Menu_RequestClearCrew();
+    Hint("添加的 NPC 只会坐在座位上，暂时不会驾驶飞船或操作炮塔。");
 }

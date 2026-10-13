@@ -25,28 +25,28 @@ public:
             Error("game.creative isn't available (result %d)", static_cast<int>(open));
             return open;
         }
-        sco_result r = Toggle("creative.god", "God mode", "No damage to you", "game.creative.god_mode",
+        sco_result r = Toggle("creative.god", "无敌模式", "No damage to you", "game.creative.god_mode",
                               &sco::sdk::game::Creative::SetGodMode);
         if (r == SCO_OK)
-            r = Toggle("creative.noclip", "Noclip", "Fly through everything (speed: creative.noclip_speed)", "game.creative.fly",
+            r = Toggle("creative.noclip", "穿墙飞行", "Fly through everything (speed: creative.noclip_speed)", "game.creative.fly",
                        &sco::sdk::game::Creative::SetFlyMode);
         if (r == SCO_OK)
-            r = Toggle("creative.ammo", "Infinite ammo", "The weapons you carry never run out", "game.creative.ammo",
+            r = Toggle("creative.ammo", "无限弹药", "The weapons you carry never run out", "game.creative.ammo",
                        &sco::sdk::game::Creative::SetInfiniteAmmo);
         if (r == SCO_OK)
-            r = Toggle("creative.ship_ammo", "Infinite ship ammo", "Every weapon on the ship you're aboard never runs out",
+            r = Toggle("creative.ship_ammo", "飞船无限弹药", "Every weapon on the ship you're aboard never runs out",
                        "game.creative.ship_ammo", &sco::sdk::game::Creative::SetInfiniteShipAmmo);
         if (r == SCO_OK)
             r = CommandBuilder(*this, "creative.noclip_speed")
-                    .Title("Noclip speed")
+                    .Title("穿墙飞行速度")
                     .Help("The fly speed in metres per second (1 to 10000); the game's own speed returns when this plugin unloads")
                     .Capability("game.creative.fly")
                     .Arg<double>("speed", "Metres per second")
                     .Handle([this](const Args& args, Reply& reply) {
                         const double speed = args.Float(0);
                         const sco_result s = cr_.SetFlySpeed(static_cast<float>(speed));
-                        if (s != SCO_OK) return Failed(reply, "Noclip speed", s);
-                        reply.Printf("Noclip speed %.0f", speed);
+                        if (s != SCO_OK) return Failed(reply, "穿墙飞行速度", s);
+                        reply.Printf("穿墙飞行速度 %.0f", speed);
                         return SCO_OK;
                     })
                     .Register();
@@ -76,7 +76,7 @@ private:
     sco_result Failed(sco::sdk::Reply& reply, const char* what, sco_result r) const {
         char why[256] = {};
         cr_.LastError(why);
-        reply.Printf("%s failed: %s", what, why[0] ? why : "see mod.log");
+        reply.Printf("%s失败：%s", what, why[0] ? why : "详见 mod.log");
         return r;
     }
 
@@ -91,8 +91,8 @@ private:
             .Handle([this, set, label](const Args& args, Reply& reply) {
                 const bool on = args.Bool(0);
                 const sco_result s = (cr_.*set)(on);
-                if (s != SCO_OK) return Failed(reply, (label + (on ? " on" : " off")).c_str(), s);
-                reply.Printf("%s %s", label.c_str(), on ? "on" : "off");
+                if (s != SCO_OK) return Failed(reply, (label + (on ? "开启" : "关闭")).c_str(), s);
+                reply.Printf("%s：%s", label.c_str(), on ? "开启" : "关闭");
                 return SCO_OK;
             })
             .Register();

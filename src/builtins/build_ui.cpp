@@ -11,9 +11,9 @@ void DrawBuildTab(void*, void*) {
     static int  build = 0, buildTab = 0;
     static char buildFilter[64] = "";
     const int buildables = Menu_BuildCount();
-    SectionHeading("Objects");
-    if (buildables < 0) { Hint("Loading build objects (you need to be in the universe)..."); return; }
-    if (buildables == 0) { Hint("No build objects found. Check data\\buildables.txt."); return; }
+    SectionHeading("物体");
+    if (buildables < 0) { Hint("正在加载建造物体（需要先进入游戏世界）..."); return; }
+    if (buildables == 0) { Hint("没有找到建造物体，请检查 data\\buildables.txt。"); return; }
     if (build >= buildables) build = 0;
     if (ImGui::BeginTabBar("##buildTabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
         for (int c = 0; c < Menu_BuildCategoryCount(); ++c) {
@@ -24,7 +24,7 @@ void DrawBuildTab(void*, void*) {
         }
         ImGui::EndTabBar();
     }
-    SearchBox("##buildFilter", "Search all objects", buildFilter, sizeof(buildFilter));
+    SearchBox("##buildFilter", "搜索所有物体", buildFilter, sizeof(buildFilter));
     const bool searching = buildFilter[strspn(buildFilter, " _")] != 0;
     if (ImGui::BeginChild("##buildList", ImVec2(0, 260), ImGuiChildFlags_Borders)) {
         for (int i = 0; i < buildables; ++i) {
@@ -44,25 +44,25 @@ void DrawBuildTab(void*, void*) {
     }
     ImGui::EndChild();
 
-    SectionHeading("Placing");
+    SectionHeading("放置");
     char picked[128];
     PrettyBuildName(picked, sizeof(picked), Menu_BuildName(build));
-    ImGui::Text("Selected: %s", picked);
+    ImGui::Text("已选择：%s", picked);
     float reach = Menu_BuildReach();
     ImGui::SetNextItemWidth(-1);
-    ImGui::SliderFloat("##reach", &reach, 5.0f, 300.0f, "Reach %.0f m");
-    ImGui::SetItemTooltip("How far ahead objects are placed. They land on the ground where you look, or under the point this far out.");
+    ImGui::SliderFloat("##reach", &reach, 5.0f, 300.0f, "放置距离 %.0f 米");
+    ImGui::SetItemTooltip("物体放在前方多远处：落在你视线所指的地面上，或这个距离处正下方的地面上。");
     Menu_SetBuild(build, reach);
     const bool building = Menu_BuildModeActive();
-    if (PrimaryButton(building ? "Stop building (F6)" : "Start building (F6)")) {
+    if (PrimaryButton(building ? "停止建造（F6）" : "开始建造（F6）")) {
         Menu_ToggleBuildMode();
         if (!building) MenuClose();
     }
     const float half = Columns(2);
-    if (ImGui::Button("Undo last", ImVec2(half, 0))) Menu_BuildUndo();
+    if (ImGui::Button("撤销上一步", ImVec2(half, 0))) Menu_BuildUndo();
     ImGui::SameLine();
     char clearLabel[48];
-    snprintf(clearLabel, sizeof(clearLabel), "Clear base (%d)###clearBase", Menu_BuildPlacedCount());
+    snprintf(clearLabel, sizeof(clearLabel), "清空基地（%d）###clearBase", Menu_BuildPlacedCount());
     if (ImGui::Button(clearLabel, ImVec2(half, 0))) Menu_BuildClear();
-    Hint("While building: left click places, R rotates, [ and ] change reach, Backspace undoes, F6 stops.");
+    Hint("建造时：左键放置，R 旋转，[ 和 ] 调整距离，Backspace 撤销，F6 停止。");
 }

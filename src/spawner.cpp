@@ -171,7 +171,7 @@ static volatile LONG g_menuShipCount = -1;
 static volatile LONG g_menuWantShips = 0;
 static SRWLOCK       g_menuLock = SRWLOCK_INIT;
 // The status strip's text until a feature or a plugin sets one (sco::Status).
-static const char    kMenuStatusDefault[] = "Pick a ship and press Spawn.";
+static const char    kMenuStatusDefault[] = "选择一艘飞船，然后点“生成”。";
 static struct { bool pending; int index; MenuSpawnOptions opt; } g_spawnRequest;
 static struct { bool pending; bool enemyWing; char cls[64]; float height; bool sit; bool flightReady; } g_classRequest;
 
@@ -198,15 +198,34 @@ bool SpawnerReady() { return g_sp.ok; }
 bool StartingOverDaymar() { return g_startDaymarPending; }
 bool PluginsEnabled() { return g_pluginsOn; }
 
+// sco::Status keeps 255 bytes, a third of that in Chinese: the strip shows the whole line of the
+// last SetMenuStatus while sco::Status still holds the part it was given (Menu_GetStatus).
+static SRWLOCK g_statusLock = SRWLOCK_INIT;
+static char    g_statusWhole[768] = "";
+static char    g_statusKept[256] = "";
+
 void SetMenuStatus(const char* fmt, ...) {
-    char buf[256];
+    char buf[768];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
+    // What sco::Status keeps, cut before a UTF-8 character rather than inside one.
+    char kept[sizeof(g_statusKept)];
+    size_t n = strlen(buf);
+    if (n >= sizeof(kept)) {
+        n = sizeof(kept) - 1;
+        while (n && (static_cast<unsigned char>(buf[n]) & 0xC0) == 0x80) --n;
+    }
+    memcpy(kept, buf, n);
+    kept[n] = 0;
+    AcquireSRWLockExclusive(&g_statusLock);
+    strcpy_s(g_statusWhole, buf);
+    strcpy_s(g_statusKept, kept);
+    ReleaseSRWLockExclusive(&g_statusLock);
     // One status line for features and plugins. sco::Status stores it and logs it once, as
     // "[status] ..." (this used to log "[ship] ...").
-    sco::Status("%s", buf);
+    sco::Status("%s", kept);
 }
 
 int Menu_ShipCount() {
@@ -226,8 +245,32 @@ void Menu_RequestSpawn(int index, const MenuSpawnOptions& options) {
     ReleaseSRWLockExclusive(&g_menuLock);
 }
 
+// sco-core's own status lines (the plugin loader's), "plugin <id> <what>", in Chinese.
+static void ChineseCoreStatus(char* out, size_t n) {
+    static const struct { const char* what; const char* zh; } kLines[] = {
+        { " could not be released and was disabled", "插件 %s 无法释放，已被禁用" },
+        { " faulted; restart the game", "插件 %s 出错，请重启游戏" },
+        { " crashed and was disabled", "插件 %s 崩溃，已被禁用" },
+    };
+    const size_t len = strlen(out);
+    if (strncmp(out, "plugin ", 7) != 0) return;
+    for (const auto& l : kLines) {
+        const size_t tail = strlen(l.what);
+        if (len <= 7 + tail || strcmp(out + len - tail, l.what) != 0) continue;
+        char id[128];
+        snprintf(id, sizeof(id), "%.*s", static_cast<int>(len - 7 - tail), out + 7);
+        snprintf(out, n, l.zh, id);
+        return;
+    }
+}
+
 void Menu_GetStatus(char* out, size_t n) {
-    if (!sco::GetStatus(out, n)) strncpy_s(out, n, kMenuStatusDefault, _TRUNCATE);
+    if (!sco::GetStatus(out, n)) { strncpy_s(out, n, kMenuStatusDefault, _TRUNCATE); return; }
+    AcquireSRWLockShared(&g_statusLock);
+    const bool ours = g_statusKept[0] && strcmp(out, g_statusKept) == 0;
+    if (ours) strncpy_s(out, n, g_statusWhole, _TRUNCATE);
+    ReleaseSRWLockShared(&g_statusLock);
+    if (!ours) ChineseCoreStatus(out, n);
 }
 
 static uintptr_t ClassRegistry() { return VCall<uintptr_t>(*g_tp.entitySystem, actors::kEsClassRegistry); }
@@ -393,7 +436,7 @@ static const char* SpawnShipInZone(const char* shipClass, uint64_t zoneId, const
     __try {
         const uintptr_t es = *g_tp.entitySystem;
         const uintptr_t cls = VCall<uintptr_t>(ClassRegistry(), actors::kRegistryFindClass, shipClass);
-        if (!cls) return "unknown entity class";
+        if (!cls) return "未知的实体类";
 
         alignas(16) uint8_t params[actors::kSpawnParamsSize] = {};
         g_sp.ctor(params);
@@ -406,11 +449,11 @@ static const char* SpawnShipInZone(const char* shipClass, uint64_t zoneId, const
         uintptr_t batch = 0;
         VCall<void>(es, actors::kEsCreateBatch, &batch, "starcitzenofflinemods ship spawner",
                     static_cast<uint32_t>(g_sp.teamCategory(g_sp.teamTag)), static_cast<uint32_t>(0));
-        if (!batch) return "couldn't create a spawn batch";
+        if (!batch) return "无法创建生成批次";
         uintptr_t attributes[2] = {};
         VCall<void>(es, actors::kEsSpawnAttributes, attributes);
         if (ocPath) {
-            if (!attributes[0]) return "couldn't create spawn attributes";
+            if (!attributes[0]) return "无法创建生成属性";
             const uintptr_t paths = VCall<uintptr_t>(*g_sp.system, g_sp.pathMgrSlot);
             uint32_t pathId = paths ? VCall<uint32_t>(paths, g_sp.pathIdSlot, ocPath) : 0;
             const struct { const char* name; uint32_t* value; } field = { "ocFilename", &pathId };
@@ -422,30 +465,30 @@ static const char* SpawnShipInZone(const char* shipClass, uint64_t zoneId, const
         uintptr_t owned = batch;
         VCall<void>(es, actors::kEsReleaseBatch, &owned);
         shipId = newId[0];
-        return shipId ? nullptr : "the spawn batch gave no entity id";
+        return shipId ? nullptr : "生成批次没有返回实体 ID";
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while spawning";
+        return "生成时出错";
     }
 }
 
 static const char* PlayerZonePos(const double offset[3], uint64_t& zoneId, double pos[3]) {
     __try {
         uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "you're not spawned yet";
+        if (!GetLocalPlayer(actor, entity)) return "你还没有进入游戏世界";
         const uintptr_t zone = VCall<uintptr_t>(entity, 0x6B8);
-        if (!zone) return "you're not in a zone";
+        if (!zone) return "你不在任何区域内";
         zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
+        if (!zoneId || ZoneFromId(zoneId) != zone) return "区域 ID 不匹配";
         Vec3Out(entity, 0x2B8, pos);
         for (int i = 0; i < 3; ++i) pos[i] += offset[i];
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while reading your position";
+        return "读取你的位置时出错";
     }
     return nullptr;
 }
 
 const char* SpawnEntityNearPlayer(const char* entityClass, const double offset[3], uint64_t& id) {
-    if (!g_sp.ok) return "the spawner isn't available";
+    if (!g_sp.ok) return "生成器不可用";
     uint64_t zoneId = 0;
     double pos[3] = {};
     if (const char* err = PlayerZonePos(offset, zoneId, pos)) return err;
@@ -453,38 +496,38 @@ const char* SpawnEntityNearPlayer(const char* entityClass, const double offset[3
 }
 
 const char* SpawnEntityInPlayerZone(const char* entityClass, const double pos[3], const double rot[4], uint64_t& id) {
-    if (!g_sp.ok) return "the spawner isn't available";
+    if (!g_sp.ok) return "生成器不可用";
     uint64_t zoneId = 0;
     __try {
         uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "you're not spawned yet";
+        if (!GetLocalPlayer(actor, entity)) return "你还没有进入游戏世界";
         const uintptr_t zone = VCall<uintptr_t>(entity, 0x6B8);
-        if (!zone) return "you're not in a zone";
+        if (!zone) return "你不在任何区域内";
         zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
+        if (!zoneId || ZoneFromId(zoneId) != zone) return "区域 ID 不匹配";
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while reading your zone";
+        return "读取你所在区域时出错";
     }
     return SpawnShipInZone(entityClass, zoneId, pos, id, rot);
 }
 
 const char* SpawnEntityInZone(const char* entityClass, uint64_t zoneId, const double pos[3], const double rot[4], uint64_t& id) {
-    if (!g_sp.ok) return "the spawner isn't available";
+    if (!g_sp.ok) return "生成器不可用";
     return SpawnShipInZone(entityClass, zoneId, pos, id, rot);
 }
 
 const char* SpawnPrefabInPlayerZone(const char* ocPath, const double pos[3], const double rot[4], uint64_t& id) {
-    if (!PrefabsReady()) return "prefab spawning isn't available";
+    if (!PrefabsReady()) return "预制件生成不可用";
     uint64_t zoneId = 0;
     __try {
         uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "you're not spawned yet";
+        if (!GetLocalPlayer(actor, entity)) return "你还没有进入游戏世界";
         const uintptr_t zone = VCall<uintptr_t>(entity, 0x6B8);
-        if (!zone) return "you're not in a zone";
+        if (!zone) return "你不在任何区域内";
         zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
+        if (!zoneId || ZoneFromId(zoneId) != zone) return "区域 ID 不匹配";
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while reading your zone";
+        return "读取你所在区域时出错";
     }
     return SpawnShipInZone("StreamingObjectContainer", zoneId, pos, id, rot, ocPath);
 }
@@ -514,19 +557,19 @@ constexpr double      kDaymarRadius = 295000.0;
 constexpr double      kArrivalAltitude = 3000.0;
 
 static const char* SpawnShipAboveDaymar(const char* shipClass, uint64_t& shipId) {
-    if (!g_sp.findEntityByName) return "can't look Daymar up in this game version";
+    if (!g_sp.findEntityByName) return "当前游戏版本无法查找戴玛";
     uint64_t zoneId = 0;
     __try {
         uint64_t handle = 0;
         g_sp.findEntityByName(*g_tp.entitySystem, &handle, kDaymarEntity);
         const uintptr_t daymar = handle & kPtrMask;
-        if (!daymar) return "Daymar isn't loaded";
+        if (!daymar) return "戴玛还没有加载";
         const uintptr_t zone = VCall<uintptr_t>(daymar, actors::kEntityOocZone);
-        if (!zone) return "Daymar has no zone";
+        if (!zone) return "戴玛没有区域";
         zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "Daymar zone lookup mismatch";
+        if (!zoneId || ZoneFromId(zoneId) != zone) return "戴玛的区域 ID 不匹配";
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while looking Daymar up";
+        return "查找戴玛时出错";
     }
     const double pos[3] = { 0, 0, kDaymarRadius + kArrivalAltitude };
     return SpawnShipInZone(shipClass, zoneId, pos, shipId);
@@ -805,9 +848,9 @@ static bool EvictSeat(const SeatInfo& s) {
 }
 
 static const char* AddCrew(uint64_t shipId, uint64_t seatId, int npcIndex, DWORD now) {
-    if (g_crewJobCount >= kMaxCrewJobs) return "too many crew spawns in progress";
+    if (g_crewJobCount >= kMaxCrewJobs) return "正在生成的船员太多";
     const char* npc = Menu_NpcName(npcIndex);
-    if (!npc || !*npc) return "pick an NPC in the NPC list first";
+    if (!npc || !*npc) return "请先在 NPC 列表里选一个 NPC";
     const double offset[3] = { 1.5, 1.5, 0.2 };
     uint64_t id = 0;
     if (const char* err = SpawnEntityNearPlayer(npc, offset, id)) return err;
@@ -867,7 +910,7 @@ static void PublishSeats(int n) {
             g_menuSeats[i].state = g_seatList[i].state;
             g_menuSeats[i].id = g_seatList[i].seatId;
         }
-        snprintf(g_menuTargetName, sizeof(g_menuTargetName), "%s%s", g_target.name, n < 0 ? " (not loaded)" : "");
+        snprintf(g_menuTargetName, sizeof(g_menuTargetName), "%s%s", g_target.name, n < 0 ? " （未加载）" : "");
     }
     ReleaseSRWLockExclusive(&g_menuLock);
 }
@@ -885,17 +928,17 @@ static void SetTarget(uint64_t shipId, const char* name) {
 static const char* TargetShipImIn() {
     __try {
         uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "you're not spawned yet";
+        if (!GetLocalPlayer(actor, entity)) return "你还没有进入游戏世界";
         const uintptr_t zone = VCall<uintptr_t>(entity, 0x6B8);
-        if (!zone) return "you're not in a zone";
+        if (!zone) return "你不在任何区域内";
         const uint64_t id = ZoneId(zone);
         const uintptr_t ship = EntityById(id);
-        if (!ship || !EntityComponent(ship, "IItemPortContainer")) return "you're not inside a ship - stand or sit in it first";
+        if (!ship || !EntityComponent(ship, "IItemPortContainer")) return "你不在飞船里，请先站或坐在船内";
         const char* name = ZoneName(zone);
         g_target.shipId = id;
         strncpy_s(g_target.name, name ? name : "ship", _TRUNCATE);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while reading your ship";
+        return "读取你的飞船时出错";
     }
     RefreshTargetSeats();
     return nullptr;
@@ -1224,7 +1267,7 @@ static void RunPowerJob(DWORD now) {
     if (!g_powerJob.shipId || static_cast<LONG>(now - g_powerJob.at) < 0) return;
     const uintptr_t dashboard = g_sp.toggleFlightReady ? FindDashboard(g_powerJob.shipId, g_powerJob.seatId) : 0;
     if (dashboard && SendDashEvent(g_sp.toggleFlightReady, dashboard)) {
-        SetMenuStatus("%s powered on - sent the game's Flight Ready event to the pilot dashboard.", g_powerJob.name);
+        SetMenuStatus("%s 已通电，已向驾驶舱仪表板发送飞行就绪事件。", g_powerJob.name);
         g_powerJob.shipId = 0;
         return;
     }
@@ -1236,9 +1279,9 @@ static void RunPowerJob(DWORD now) {
     if (g_sp.toggleFlightReady) Log("[ship] no seat dashboard on the %s; falling back to the R key", g_powerJob.name);
     if (GameHasFocus()) {
         PressFlightReadyKey();
-        SetMenuStatus("Couldn't reach the %s's dashboard directly - pressed Flight Ready (R) for you.", g_powerJob.name);
+        SetMenuStatus("无法直接访问 %s 的仪表板，已替你按下飞行就绪（R）。", g_powerJob.name);
     } else {
-        SetMenuStatus("Couldn't reach the %s's dashboard. Press R (Flight Ready) to power up.", g_powerJob.name);
+        SetMenuStatus("无法访问 %s 的仪表板，请按 R（飞行就绪）启动。", g_powerJob.name);
     }
     g_powerJob.shipId = 0;
 }
@@ -1248,16 +1291,16 @@ static void FinishSeatJob(DWORD now) {
     const bool pilot = have && g_lastSeat.priority >= kPilotPriority;
     if (pilot && g_seatJob.flightReady) {
         StartPowerJob(g_seatJob.id, g_lastSeat.seatId, g_seatJob.name, now + 1500, 20000);
-        SetMenuStatus("You're in the %s's pilot seat - powering up...", g_seatJob.name);
+        SetMenuStatus("你已坐上 %s 的驾驶座，正在启动...", g_seatJob.name);
     } else if (pilot) {
-        SetMenuStatus("You're in the %s's pilot seat ('%s'). Press R (Flight Ready) to power up.", g_seatJob.name, g_lastSeat.name);
+        SetMenuStatus("你已坐上 %s 的驾驶座（“%s”）。按 R（飞行就绪）启动。", g_seatJob.name, g_lastSeat.name);
     } else if (have && g_seatJob.mode == SeatMode_Pilot && !g_seatJob.wantSeat) {
-        SetMenuStatus("You're in the %s, but its pilot seat wasn't free%s - you got '%s'.", g_seatJob.name,
-                      g_seatJob.replaceNpc ? "" : " (tick 'replace NPC' to take it)", g_lastSeat.name);
+        SetMenuStatus("你已登上 %s，但驾驶座被占用%s，你坐在“%s”。", g_seatJob.name,
+                      g_seatJob.replaceNpc ? "" : "（勾选“移除我座位上的 NPC”即可占用）", g_lastSeat.name);
     } else if (have) {
-        SetMenuStatus("You're in '%s' on the %s.", g_lastSeat.name, g_seatJob.name);
+        SetMenuStatus("你坐在“%s”（%s）。", g_lastSeat.name, g_seatJob.name);
     } else {
-        SetMenuStatus("You're in the %s. Have fun!", g_seatJob.name);
+        SetMenuStatus("你已登上 %s，玩得开心！", g_seatJob.name);
     }
     g_seatJob.id = 0;
     RefreshTargetSeats();
@@ -1271,7 +1314,7 @@ static void UpdateSeatJob(DWORD now) {
         if (SeatJobDone()) { FinishSeatJob(now); return; }
     }
     if (now - g_seatJob.since > 180000) {
-        SetMenuStatus("%s spawned, but I couldn't get you aboard within 3 minutes.", g_seatJob.name);
+        SetMenuStatus("%s 已生成，但 3 分钟内没能让你登船。", g_seatJob.name);
         g_seatJob.id = 0;
         return;
     }
@@ -1281,26 +1324,26 @@ static void UpdateSeatJob(DWORD now) {
     case SeatStep::NoSeat:   g_seatJob.lastSend = now; g_seatJob.lastWasEvict = false; break;
     case SeatStep::Blocked:
         if (!g_haveLastSeat)
-            SetMenuStatus("That seat isn't on the %s any more - refresh the list.", g_seatJob.name);
+            SetMenuStatus("%s 上已经没有这个座位了，请刷新列表。", g_seatJob.name);
         else if (g_lastSeat.state == SeatState_Npc && g_seatJob.evictions > 3)
-            SetMenuStatus("The NPC in '%s' keeps coming back - try another seat.", g_lastSeat.name);
+            SetMenuStatus("“%s”上的 NPC 一直回来，请换个座位。", g_lastSeat.name);
         else if (g_lastSeat.state == SeatState_Npc)
-            SetMenuStatus("'%s' has an NPC in it - tick 'replace NPC' or kick it first.", g_lastSeat.name);
+            SetMenuStatus("“%s”上有 NPC，请勾选“移除我座位上的 NPC”或先把它请走。", g_lastSeat.name);
         else
-            SetMenuStatus("'%s' is taken by someone I can't identify, so I left it.", g_lastSeat.name);
+            SetMenuStatus("“%s”被无法识别的人占用，所以没有动它。", g_lastSeat.name);
         g_seatJob.id = 0;
         RefreshTargetSeats();
         break;
     case SeatStep::Evicting:
         g_seatJob.lastSend = now;
         g_seatJob.lastWasEvict = true;
-        SetMenuStatus("Removing the NPC from '%s' on the %s...", g_lastSeat.name, g_seatJob.name);
+        SetMenuStatus("正在移除“%s”上的 NPC（%s）...", g_lastSeat.name, g_seatJob.name);
         break;
-    case SeatStep::Fault:    SetMenuStatus("Seating failed (fault)."); g_seatJob.id = 0; break;
+    case SeatStep::Fault:    SetMenuStatus("入座失败（出错）。"); g_seatJob.id = 0; break;
     case SeatStep::Sent:
         g_seatJob.lastSend = now;
         g_seatJob.lastWasEvict = false;
-        if (++g_seatJob.sends > 8) { SetMenuStatus("Asked %s to seat you 8 times; it didn't take.", g_seatJob.name); g_seatJob.id = 0; }
+        if (++g_seatJob.sends > 8) { SetMenuStatus("已请求 %s 让你入座 8 次，均未成功。", g_seatJob.name); g_seatJob.id = 0; }
         else Log("[ship] seat request %d sent to %s", g_seatJob.sends, g_seatJob.name);
         break;
     }
@@ -1316,40 +1359,40 @@ static void ProcessSeatAction(DWORD now) {
     if (act.kind == SA_None) return;
 
     if (act.kind == SA_TargetMine) {
-        if (const char* err = TargetShipImIn()) SetMenuStatus("Can't pick your ship: %s", err);
-        else SetMenuStatus("Crew & seats now shows the %s.", g_target.name);
+        if (const char* err = TargetShipImIn()) SetMenuStatus("无法选中你的飞船：%s", err);
+        else SetMenuStatus("“船员”页现在显示 %s。", g_target.name);
         return;
     }
-    if (!SeatControl()) { SetMenuStatus("Seat control isn't available in this game version."); return; }
-    if (!g_target.shipId) { SetMenuStatus("Spawn a ship first (or press 'Use the ship I'm in')."); return; }
+    if (!SeatControl()) { SetMenuStatus("当前游戏版本不支持座位控制。"); return; }
+    if (!g_target.shipId) { SetMenuStatus("请先生成一艘飞船（或点“使用我所在的飞船”）。"); return; }
     const int n = EnumerateShipSeats(g_target.shipId);
-    if (n <= 0) { SetMenuStatus("The %s isn't loaded (or has no seats).", g_target.name); PublishSeats(n); return; }
+    if (n <= 0) { SetMenuStatus("%s 还没加载完（或者没有座位），请稍等几秒再试。", g_target.name); PublishSeats(n); return; }
     const SeatInfo* seat = act.seatId ? SeatById(act.seatId) : nullptr;
 
     switch (act.kind) {
     case SA_Sit:
-        if (!seat) { SetMenuStatus("That seat is gone - refresh the list."); break; }
+        if (!seat) { SetMenuStatus("这个座位已经不存在，请刷新列表。"); break; }
         StartSeatJob(g_target.shipId, g_target.name, SeatMode_Pilot, "", act.replace, false, seat->seatId, now);
-        SetMenuStatus("Moving you to '%s'...", seat->name);
+        SetMenuStatus("正在把你移到“%s”...", seat->name);
         break;
     case SA_Kick:
-        if (!seat) { SetMenuStatus("That seat is gone - refresh the list."); break; }
-        if (seat->state == SeatState_Npc) { const SeatInfo copy = *seat; EvictSeat(copy); SetMenuStatus("Removed the NPC from '%s'.", copy.name); }
-        else if (seat->state == SeatState_Taken) SetMenuStatus("Can't tell who is in '%s', so I left them.", seat->name);
-        else SetMenuStatus("There's no NPC in '%s'.", seat->name);
+        if (!seat) { SetMenuStatus("这个座位已经不存在，请刷新列表。"); break; }
+        if (seat->state == SeatState_Npc) { const SeatInfo copy = *seat; EvictSeat(copy); SetMenuStatus("已移除“%s”上的 NPC。", copy.name); }
+        else if (seat->state == SeatState_Taken) SetMenuStatus("无法确定“%s”上是谁，所以没有动。", seat->name);
+        else SetMenuStatus("“%s”上没有 NPC。", seat->name);
         break;
     case SA_StandUp:
-        if (!seat) { SetMenuStatus("That seat is gone - refresh the list."); break; }
+        if (!seat) { SetMenuStatus("这个座位已经不存在，请刷新列表。"); break; }
         if (seat->state == SeatState_You)
-            SetMenuStatus(UnlinkEntity(LocalPlayerEntity()) ? "You got out of '%s'." : "Couldn't get you out of '%s'.", seat->name);
+            SetMenuStatus(UnlinkEntity(LocalPlayerEntity()) ? "你已离开“%s”。" : "无法让你离开“%s”。", seat->name);
         else if (seat->state == SeatState_Npc) {
             const SeatInfo copy = *seat;
             const bool ok = UnlinkEntity(EntityByIdSafe(copy.occupant));
             if (ok) ForgetPlacedCrew(copy.occupant);
-            SetMenuStatus(ok ? "The NPC in '%s' stood up." : "Couldn't get the NPC out of '%s'.", copy.name);
+            SetMenuStatus(ok ? "“%s”上的 NPC 已起身。" : "无法让“%s”上的 NPC 离开。", copy.name);
         }
-        else if (seat->state == SeatState_Taken) SetMenuStatus("Can't tell who is in '%s', so I left them.", seat->name);
-        else SetMenuStatus("'%s' is already empty.", seat->name);
+        else if (seat->state == SeatState_Taken) SetMenuStatus("无法确定“%s”上是谁，所以没有动。", seat->name);
+        else SetMenuStatus("“%s”已经是空的。", seat->name);
         break;
     case SA_StandAll: {
         uint64_t npcs[kMaxSeats];
@@ -1358,15 +1401,15 @@ static void ProcessSeatAction(DWORD now) {
             if (g_seatList[i].state == SeatState_Npc) npcs[count++] = g_seatList[i].occupant;
         for (int i = 0; i < count; ++i)
             if (UnlinkEntity(EntityByIdSafe(npcs[i]))) { ForgetPlacedCrew(npcs[i]); ++stood; }
-        SetMenuStatus("%d of %d NPCs on the %s stood up.", stood, count, g_target.name);
+        SetMenuStatus("已有 %d / %d 个 NPC 起身（%s）。", stood, count, g_target.name);
         break;
     }
     case SA_AddCrew: {
-        if (!seat) { SetMenuStatus("That seat is gone - refresh the list."); break; }
-        if (seat->state != SeatState_Empty) { SetMenuStatus("'%s' isn't empty - kick its occupant first.", seat->name); break; }
+        if (!seat) { SetMenuStatus("这个座位已经不存在，请刷新列表。"); break; }
+        if (seat->state != SeatState_Empty) { SetMenuStatus("“%s”不是空的，请先让上面的人离开。", seat->name); break; }
         const SeatInfo copy = *seat;
-        if (const char* err = AddCrew(g_target.shipId, copy.seatId, act.npc, now)) SetMenuStatus("Adding crew failed: %s", err);
-        else SetMenuStatus("Seating %s in '%s'...", Menu_NpcName(act.npc), copy.name);
+        if (const char* err = AddCrew(g_target.shipId, copy.seatId, act.npc, now)) SetMenuStatus("添加船员失败：%s", err);
+        else SetMenuStatus("正在把 %s 安排到“%s”...", Menu_NpcName(act.npc), copy.name);
         break;
     }
     case SA_FillCrew: {
@@ -1377,8 +1420,8 @@ static void ProcessSeatAction(DWORD now) {
         const char* err = nullptr;
         for (int i = 0; i < count && !err; ++i)
             if (!(err = AddCrew(g_target.shipId, empty[i], act.npc, now))) ++added;
-        if (err && !added) SetMenuStatus("Filling seats failed: %s", err);
-        else SetMenuStatus("Seating %d x %s on the %s...", added, Menu_NpcName(act.npc), g_target.name);
+        if (err && !added) SetMenuStatus("填充座位失败：%s", err);
+        else SetMenuStatus("正在安排 %d 个 %s 入座（%s）...", added, Menu_NpcName(act.npc), g_target.name);
         break;
     }
     case SA_ClearCrew: {
@@ -1387,12 +1430,12 @@ static void ProcessSeatAction(DWORD now) {
         for (int i = 0; i < g_seatListCount; ++i)
             if (g_seatList[i].state == SeatState_Npc) npcs[count++] = g_seatList[i];
         for (int i = 0; i < count; ++i) EvictSeat(npcs[i]);
-        SetMenuStatus("Removed %d NPC crew from the %s.", count, g_target.name);
+        SetMenuStatus("已移除 %d 名 NPC 船员（%s）。", count, g_target.name);
         break;
     }
     case SA_FlightReady: {
         const SeatInfo* pilot = PilotSeat();
-        if (!pilot || !g_sp.toggleFlightReady) { SetMenuStatus("Flight Ready event not available - press R in the pilot seat."); break; }
+        if (!pilot || !g_sp.toggleFlightReady) { SetMenuStatus("无法发送飞行就绪事件，请在驾驶座按 R。"); break; }
         StartPowerJob(g_target.shipId, pilot->seatId, g_target.name, now, 3000);
         break;
     }
@@ -1404,12 +1447,12 @@ static void ProcessSeatAction(DWORD now) {
 static void StartDaymarArrival(const char* shipClass, DWORD now) {
     uint64_t id = 0;
     if (const char* err = SpawnShipAboveDaymar(shipClass, id)) {
-        SetMenuStatus("Going to Daymar failed: %s", err);
+        SetMenuStatus("前往戴玛失败：%s", err);
         return;
     }
     SetTarget(id, shipClass);
     StartSeatJob(id, shipClass, SeatMode_Pilot, "", true, true, 0, now);
-    SetMenuStatus("Spawning %s %.0f km over Daymar - you'll be put in its pilot seat, then fly down and land.",
+    SetMenuStatus("正在生成 %s（戴玛上空 %.0f 公里），你会被安排到驾驶座，然后飞下去降落。",
                   shipClass, kArrivalAltitude / 1000);
 }
 
@@ -1437,7 +1480,7 @@ void ProcessShipMenu(DWORD now) {
     if (classReq.pending && classReq.cls[0]) {
         uint64_t id = 0;
         if (const char* err = SpawnShipAbovePlayer(classReq.cls, classReq.height, id))
-            SetMenuStatus("Spawning %s failed: %s", classReq.cls, err);
+            SetMenuStatus("生成 %s 失败：%s", classReq.cls, err);
         else if (classReq.enemyWing) {
             SetTarget(id, classReq.cls);   // the Bengal itself, like the plain Bengal row; the wing ships are not targeted
             // The wing goes 300 m up — the height the menu's own hint promises for
@@ -1449,36 +1492,36 @@ void ProcessShipMenu(DWORD now) {
                 if (const char* err = SpawnShipAbovePlayer(c, 300.0, wingId)) { Log("[ship] enemy wing: %s failed: %s", c, err); continue; }
                 ++wing;
             }
-            SetMenuStatus("%s spawned %.0f m above you; %d of 3 enemy wing ships came in at 300 m.",
+            SetMenuStatus("%s 已在你上方 %.0f 米生成；3 艘敌方僚机中有 %d 艘在 300 米处出现。",
                           classReq.cls, classReq.height, wing);
         } else if (!classReq.sit) {
             SetTarget(id, classReq.cls);
-            SetMenuStatus("Spawning %s %.0f m above you (big ships take up to a minute).", classReq.cls, classReq.height);
+            SetMenuStatus("正在你上方 %.0f 米处生成 %s（大船最多需要一分钟）。", classReq.height, classReq.cls);
         } else {
             SetTarget(id, classReq.cls);
             StartSeatJob(id, classReq.cls, SeatMode_Pilot, nullptr, true, classReq.flightReady, 0, now);
-            SetMenuStatus("Spawning %s - you'll be put in the pilot seat as soon as it's there (big ships take up to a minute).", classReq.cls);
+            SetMenuStatus("正在生成 %s，生成后会立即安排你坐上驾驶座（大船最多需要一分钟）。", classReq.cls);
         }
     } else if (req.pending && req.index >= 0 && req.index < g_menuShipCount) {
         const char* name = g_menuShips[req.index].name;
         const MenuSpawnOptions& o = req.opt;
         uint64_t id = 0;
         if (const char* err = SpawnShipAbovePlayer(name, o.height, id)) {
-            SetMenuStatus("Spawning %s failed: %s", name, err);
+            SetMenuStatus("生成 %s 失败：%s", name, err);
         } else {
             SetTarget(id, name);
             switch (o.seatMode) {
             case SeatMode_None:
-                SetMenuStatus("Spawning %s %.0f m above you (big ships take up to a minute).", name, o.height);
+                SetMenuStatus("正在你上方 %.0f 米处生成 %s（大船最多需要一分钟）。", o.height, name);
                 break;
             case SeatMode_PickLater:
-                SetMenuStatus("Spawning %s - pick a seat under Crew & seats once it has loaded.", name);
+                SetMenuStatus("正在生成 %s，加载完成后请在“船员”页选择座位。", name);
                 break;
             default: {
                 const bool named = o.seatMode == SeatMode_Named && o.seatName[0];
                 StartSeatJob(id, name, named ? SeatMode_Named : SeatMode_Pilot, o.seatName, o.replaceNpc, o.flightReady, 0, now);
-                if (named) SetMenuStatus("Spawning %s - you'll be put in a '%s' seat as soon as it's there.", name, o.seatName);
-                else SetMenuStatus("Spawning %s - you'll be put in the pilot seat as soon as it's there (big ships take up to a minute).", name);
+                if (named) SetMenuStatus("正在生成 %s，生成后会把你安排到“%s”座位。", name, o.seatName);
+                else SetMenuStatus("正在生成 %s，生成后会立即安排你坐上驾驶座（大船最多需要一分钟）。", name);
                 break;
             }
             }

@@ -123,7 +123,7 @@ sco_result QuantumLoad(const sco_api* api, sco_plugin* self) {
     if (r != SCO_OK) return r;   // the host releases what was registered
     g_quantumStore.Open(api, self);   // before the first tick, which loads the saved spots
     // Its page of the menu (and keys), through sco.ui; the menu shell draws it (tabs.h).
-    RegisterBuiltinTab(api, self, "quantum.travel", "Travel", kTabTravel, DrawTravelTab);
+    RegisterBuiltinTab(api, self, "quantum.travel", "传送", kTabTravel, DrawTravelTab);
     g_ticking = true;
     return SCO_OK;
 }

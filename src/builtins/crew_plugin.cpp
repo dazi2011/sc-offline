@@ -409,7 +409,7 @@ sco_result CrewLoad(const sco_api* api, sco_plugin* self) {
     if (r == SCO_OK) r = api->subscribe(self, "tick", OnTick, nullptr);
     if (r != SCO_OK) return r;   // the host releases what was registered
     // Its page of the menu (and keys), through sco.ui; the menu shell draws it (tabs.h).
-    RegisterBuiltinTab(api, self, "crew.crew", "Crew", kTabCrew, DrawCrewTab);
+    RegisterBuiltinTab(api, self, "crew.crew", "船员", kTabCrew, DrawCrewTab);
     g_ticking = true;
     return SCO_OK;
 }

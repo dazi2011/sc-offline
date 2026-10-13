@@ -404,27 +404,29 @@ void PrettyBuildName(char* out, size_t n, const char* name) {
 // =============================================================================================
 
 static void DrawMenuTab() {
-    SectionHeading("Background");
+    SectionHeading("背景");
     if (g_bgSrv) {
-        ImGui::Checkbox("Show background image", &g_bgShow);
+        ImGui::Checkbox("显示背景图片", &g_bgShow);
         ImGui::BeginDisabled(!g_bgShow);
         ImGui::SetNextItemWidth(-1);
-        ImGui::SliderInt("##dark", &g_bgDarkness, 20, 95, "Darkness %d%%");
+        ImGui::SliderInt("##dark", &g_bgDarkness, 20, 95, "暗度 %d%%");
         if (static_cast<float>(g_bgW) / g_bgH > 0.7f) {
             ImGui::SetNextItemWidth(-1);
-            ImGui::SliderFloat("##pos", &g_bgPosition, 0.0f, 1.0f, "Image position");
-            ImGui::SetItemTooltip("The menu is taller than the picture is wide. Slide to choose which part shows.");
+            ImGui::SliderFloat("##pos", &g_bgPosition, 0.0f, 1.0f, "图片位置");
+            ImGui::SetItemTooltip("菜单比图片宽度更高，拖动滑块选择显示图片的哪一部分。");
         }
         ImGui::EndDisabled();
         Hint(g_bgPath);
     } else {
-        Hint("To use a background image, save it as menu_background.png (or .jpg) here, then restart the game:");
+        Hint("要使用背景图片，请把它保存为下面位置的 menu_background.png（或 .jpg），然后重启游戏：");
         ImGui::TextWrapped("%s", g_bgPath[0] ? g_bgPath : "data\\menu_background.png");
     }
 
-    SectionHeading("About");
-    Hint(SCO_TITLE " is a work in progress, " SCO_BASED_ON ".");
-    Hint("Bug reports: github.com/scubamount/sc-offline/issues");
+    SectionHeading("关于");
+    // SCO_BASED_ON in Chinese.
+    Hint(SCO_TITLE " 仍在开发中，基于 ChrisWareOffline 0.9.0-rc1。");
+    Hint("问题反馈：github.com/scubamount/sc-offline/issues");
+    Hint("中文版问题：github.com/dazi2011/sc-offline/issues");
 }
 
 // =============================================================================================
@@ -432,7 +434,7 @@ static void DrawMenuTab() {
 // =============================================================================================
 
 static void DrawStatusStrip(float height) {
-    char status[256];
+    char status[768];
     Menu_GetStatus(status, sizeof(status));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Hex(0x0B140D, 0.92f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 8));
@@ -502,7 +504,7 @@ static bool DrawMenu() {
             first = false;
             if (ImGui::BeginTabItem(label.c_str(), nullptr, flags)) { body([&] { DrawPluginTab(t, frame); }); ImGui::EndTabItem(); }
         }
-        if (ImGui::BeginTabItem("Menu", nullptr, first ? ImGuiTabItemFlags_SetSelected : 0)) { body([&] { DrawMenuTab(); }); ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("菜单", nullptr, first ? ImGuiTabItemFlags_SetSelected : 0)) { body([&] { DrawMenuTab(); }); ImGui::EndTabItem(); }
         ImGui::EndTabBar();
     }
     DrawStatusStrip(statusHeight);

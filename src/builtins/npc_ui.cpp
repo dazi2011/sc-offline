@@ -14,10 +14,10 @@ int g_npcPick = 0;
 bool NpcPicker() {
     static char filter[64] = "";
     const int npcs = Menu_NpcCount();
-    if (npcs < 0) { Hint("Loading NPCs (you need to be in the universe)..."); return false; }
-    if (npcs == 0) { Hint("No NPCs found. Check data\\npcs.txt."); return false; }
+    if (npcs < 0) { Hint("正在加载 NPC（需要先进入游戏世界）..."); return false; }
+    if (npcs == 0) { Hint("没有找到 NPC，请检查 data\\npcs.txt。"); return false; }
     if (g_npcPick >= npcs) g_npcPick = 0;
-    if (SearchBox("##npcFilter", "Search NPCs", filter, sizeof(filter)))
+    if (SearchBox("##npcFilter", "搜索 NPC", filter, sizeof(filter)))
         for (int i = 0; i < npcs; ++i)
             if (MatchesFilter(Menu_NpcName(i), filter)) { g_npcPick = i; break; }
     char preview[128];

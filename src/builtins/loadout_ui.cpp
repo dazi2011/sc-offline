@@ -19,7 +19,7 @@ static sco_plugin*    g_self = nullptr;
 void RegisterPlayerTab(const sco_api* api, sco_plugin* self) {
     g_api = api;
     g_self = self;
-    RegisterBuiltinTab(api, self, "loadout.player", "Player", kTabPlayer, DrawPlayerTab);
+    RegisterBuiltinTab(api, self, "loadout.player", "玩家", kTabPlayer, DrawPlayerTab);
 }
 
 // The command's reply in the status strip (which also logs it). A refusal puts the checkbox back; a
@@ -32,9 +32,9 @@ static void CreativeReply(sco_result r, const char* reply, void* ctx) {
     }
     if (ctx) *static_cast<bool*>(ctx) = !*static_cast<bool*>(ctx);
     if (reply && reply[0]) SetMenuStatus("%s", reply);
-    else if (r == SCO_NOT_FOUND) SetMenuStatus("Needs the creative plugin: turn it on in the launcher's Plugins page.");
-    else if (r == SCO_UNAVAILABLE) SetMenuStatus("Not available on this game build.");
-    else SetMenuStatus("The creative plugin refused (result %d).", static_cast<int>(r));
+    else if (r == SCO_NOT_FOUND) SetMenuStatus("需要 creative 插件：删除 data\\plugins\\creative 里名为 disabled 的文件，确认插件总开关已打开（SC_OFFLINE_PLUGINS=on），然后重启游戏。");
+    else if (r == SCO_UNAVAILABLE) SetMenuStatus("当前游戏版本不支持。");
+    else SetMenuStatus("creative 插件拒绝了请求（结果 %d）。", static_cast<int>(r));
 }
 
 void InvokeCreativeToggle(const char* command, bool on, bool* flag) {
@@ -57,7 +57,7 @@ static void GearCombo(int slot, const char* label, const char* none, int& pick, 
     const int n = Menu_GearCount(slot);
     if (pick >= n) pick = -1;
     char preview[112], id[32];
-    snprintf(preview, sizeof(preview), "%s: %s", label, pick >= 0 ? Menu_GearName(slot, pick) : none);
+    snprintf(preview, sizeof(preview), "%s：%s", label, pick >= 0 ? Menu_GearName(slot, pick) : none);
     snprintf(id, sizeof(id), "##gear%d", slot);
     ImGui::SetNextItemWidth(width);
     if (!ImGui::BeginCombo(id, preview, ImGuiComboFlags_HeightLarge)) return;
@@ -74,66 +74,66 @@ static void GearCombo(int slot, const char* label, const char* none, int& pick, 
 }
 
 void DrawPlayerTab(void*, void*) {
-    SectionHeading("Movement");
+    SectionHeading("移动");
     static bool  noclip = false;
     static float speed = 30.0f;
-    if (ImGui::Checkbox("Noclip", &noclip)) {
+    if (ImGui::Checkbox("穿墙飞行", &noclip)) {
         InvokeCreativeSpeed(speed);
         InvokeCreativeToggle("creative.noclip", noclip, &noclip);
     }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##noclipSpeed", &speed, 1.0f, 500.0f, "Speed %.0f", ImGuiSliderFlags_Logarithmic))
+    if (ImGui::SliderFloat("##noclipSpeed", &speed, 1.0f, 500.0f, "速度 %.0f", ImGuiSliderFlags_Logarithmic))
         InvokeCreativeSpeed(speed);
-    Hint("F7 saves where you're standing and F8 takes you back. The Travel tab has named spots and places.");
+    Hint("F7 记录当前位置，F8 传送回去。“传送”标签页里还有命名地点和各类目的地。");
 
-    SectionHeading("Protection");
+    SectionHeading("保护");
     static bool god = false, ammo = false;
-    if (ImGui::Checkbox("God mode", &god)) InvokeCreativeToggle("creative.god", god, &god);
+    if (ImGui::Checkbox("无敌模式", &god)) InvokeCreativeToggle("creative.god", god, &god);
     ImGui::SameLine(0, 24);
-    if (ImGui::Checkbox("Infinite ammo", &ammo)) InvokeCreativeToggle("creative.ammo", ammo, &ammo);
-    Hint("Noclip, god mode and infinite ammo come from the creative plugin. Turn it on in the launcher's Plugins page.");
+    if (ImGui::Checkbox("无限弹药", &ammo)) InvokeCreativeToggle("creative.ammo", ammo, &ammo);
+    Hint("穿墙飞行、无敌模式和无限弹药由 creative 插件提供，默认关闭：删除 data\\plugins\\creative 里名为 disabled 的文件，并打开插件总开关（sc-offline.ini 的 plugins = on，或环境变量 SC_OFFLINE_PLUGINS=on），重启游戏后即可使用。");
 
-    SectionHeading("Gear");
+    SectionHeading("装备");
     static int  gear[Gear_SlotCount] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     static char gearFilter[64] = "";
     static const struct { const char* label; const char* none; } kGear[Gear_SlotCount] = {
-        { "Undersuit", "Default" }, { "Helmet", "None" }, { "Body", "None" }, { "Arms", "None" }, { "Legs", "None" },
-        { "Backpack", "None" }, { "Primary", "None" }, { "Sidearm", "None" }, { "Ammo", "Matches weapon" }, { "Grenades", "None" } };
-    if (Menu_GearCount(0) < 0) { Hint("Loading gear (you need to be in the universe)..."); return; }
-    SearchBox("##gearFilter", "Search gear", gearFilter, sizeof(gearFilter));
+        { "内衬服", "默认" }, { "头盔", "无" }, { "躯干护甲", "无" }, { "手臂护甲", "无" }, { "腿部护甲", "无" },
+        { "背包", "无" }, { "主武器", "无" }, { "副武器", "无" }, { "弹药", "与武器匹配" }, { "手雷", "无" } };
+    if (Menu_GearCount(0) < 0) { Hint("正在加载装备（需要先进入游戏世界）..."); return; }
+    SearchBox("##gearFilter", "搜索装备", gearFilter, sizeof(gearFilter));
     const float half = Columns(2);
     for (int s = 0; s < Gear_SlotCount; ++s) {
         if (s % 2) ImGui::SameLine();
         GearCombo(s, kGear[s].label, kGear[s].none, gear[s], gearFilter, half);
     }
-    if (PrimaryButton("Equip gear")) { Menu_RequestEquip(gear); MenuClose(); }
+    if (PrimaryButton("穿戴装备")) { Menu_RequestEquip(gear); MenuClose(); }
 }
 
 void DrawSq42Tab(void*, void*) {
     static bool spoilerOk = false;
     if (!spoilerOk) {
-        ImGui::SeparatorText("Spoiler warning");
-        ImGui::TextWrapped("This tab could have Squadron 42 spoilers.");
-        ImGui::TextWrapped("Press OK to continue.");
-        if (ImGui::Button("OK", ImVec2(120, 0))) spoilerOk = true;
+        ImGui::SeparatorText("剧透警告");
+        ImGui::TextWrapped("这个标签页可能含有《42 中队》的剧透。");
+        ImGui::TextWrapped("点“确定”继续。");
+        if (ImGui::Button("确定", ImVec2(120, 0))) spoilerOk = true;
         ImGui::SameLine();
-        if (ImGui::Button("Back", ImVec2(120, 0))) MenuSelectFirstTab();
+        if (ImGui::Button("返回", ImVec2(120, 0))) MenuSelectFirstTab();
         return;
     }
 
-    ImGui::SeparatorText("Outfits");
+    ImGui::SeparatorText("服装");
     const int outfits = Menu_OutfitCount();
     static int outfit = 0;
     if (outfits < 0) {
-        ImGui::TextWrapped("Loading outfits... (you need to be spawned in the universe)");
+        ImGui::TextWrapped("正在加载服装...（需要先进入游戏世界）");
     } else if (outfits == 0) {
-        ImGui::TextWrapped("No outfits found - check outfits.txt.");
+        ImGui::TextWrapped("没有找到服装，请检查 outfits.txt。");
     } else {
         static char filter[64] = "";
         if (outfit >= outfits) outfit = 0;
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputTextWithHint("##outfitFilter", "search outfits...", filter, sizeof(filter));
+        ImGui::InputTextWithHint("##outfitFilter", "搜索服装...", filter, sizeof(filter));
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##outfit", Menu_OutfitName(outfit), ImGuiComboFlags_HeightLargest)) {
             for (int i = 0; i < outfits; ++i) {
@@ -146,16 +146,16 @@ void DrawSq42Tab(void*, void*) {
             }
             ImGui::EndCombo();
         }
-        if (ImGui::Button("Wear SQ42 outfit", ImVec2(-1, 0))) {
+        if (ImGui::Button("穿上 SQ42 服装", ImVec2(-1, 0))) {
             Menu_RequestWearOutfit(outfit);
             MenuClose();
         }
     }
     static bool visor = false;
-    if (ImGui::Checkbox("SQ42 visor HUD (applies on the next Equip or outfit)", &visor))
+    if (ImGui::Checkbox("SQ42 面罩 HUD（下次穿戴装备或服装时生效）", &visor))
         Menu_SetS42VisorHud(visor);
 
-    ImGui::SeparatorText("Settings");
+    ImGui::SeparatorText("设置");
     for (int i = 0; i < Menu_S42SettingCount(); ++i) {
         bool on = Menu_S42SettingOn(i);
         ImGui::PushID(i);
@@ -164,11 +164,11 @@ void DrawSq42Tab(void*, void*) {
         if (ImGui::Checkbox(Menu_S42SettingLabel(i), &on)) Menu_RequestS42Setting(i, on);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", known ? Menu_S42SettingTip(i) : "Reading this setting from the game...");
+            ImGui::SetTooltip("%s", known ? Menu_S42SettingTip(i) : "正在从游戏读取此设置...");
         ImGui::PopID();
     }
 
-    ImGui::SeparatorText("Spawn");
+    ImGui::SeparatorText("生成");
     {
         static int   thing = -1;
         static char  thingFilter[64] = "";
@@ -176,9 +176,9 @@ void DrawSq42Tab(void*, void*) {
         static float ahead = 8.0f;
         const int buildables = Menu_BuildCount();
         if (buildables < 0) {
-            ImGui::TextWrapped("Loading... (you need to be spawned in the universe)");
+            ImGui::TextWrapped("正在加载...（需要先进入游戏世界）");
         } else if (buildables == 0) {
-            ImGui::TextWrapped("No buildables found - check buildables.txt.");
+            ImGui::TextWrapped("没有找到可建造物体，请检查 buildables.txt。");
         } else {
             if (thing < 0) {
                 thing = 0;
@@ -186,9 +186,9 @@ void DrawSq42Tab(void*, void*) {
                     if (_stricmp(Menu_BuildCategory(i), "sq42") == 0) { thing = i; break; }
             }
             if (thing >= buildables) thing = 0;
-            ImGui::Checkbox("Spawn in front of you", &inFront);
+            ImGui::Checkbox("在你面前生成", &inFront);
             ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextWithHint("##thingFilter", "search the [sq42] group...", thingFilter, sizeof(thingFilter));
+            ImGui::InputTextWithHint("##thingFilter", "搜索 [sq42] 分组...", thingFilter, sizeof(thingFilter));
             ImGui::SetNextItemWidth(-1);
             if (ImGui::BeginCombo("##sq42thing", Menu_BuildName(thing), ImGuiComboFlags_HeightLargest)) {
                 for (int i = 0; i < buildables; ++i) {
@@ -205,29 +205,29 @@ void DrawSq42Tab(void*, void*) {
             }
             if (inFront) {
                 ImGui::SetNextItemWidth(200);
-                ImGui::SliderFloat("ahead (m)", &ahead, 1.0f, 50.0f, "%.0f");
+                ImGui::SliderFloat("前方距离（米）", &ahead, 1.0f, 50.0f, "%.0f");
             }
-            if (ImGui::Button("Spawn it", ImVec2(-1, 0))) {
+            if (ImGui::Button("生成它", ImVec2(-1, 0))) {
                 Menu_RequestPlace(thing, inFront, ahead);
                 MenuClose();
             }
-            ImGui::SetItemTooltip("Undo and Clear base in the build section remove these too.");
+            ImGui::SetItemTooltip("“建造”页的“撤销上一步”和“清空基地”也会移除这些物体。");
         }
     }
 
-    ImGui::SeparatorText("Ships");
+    ImGui::SeparatorText("飞船");
     struct Entry { const char* label; const char* cls; bool enemyWing; float height; bool sit; };
     static const struct { const char* label; const char* cls; } kSq42Ships[] = {
-        { "Idris-P (the Stanton's class)", "AEGS_Idris_P" },
-        { "Gladius (SQ42 fighter)",        "AEGS_Gladius" },
-        { "Retaliator (has an S42 HUD)",   "AEGS_Retaliator" },
-        { "Starfarer (ch 5, 7, 9)",        "MISC_Starfarer" },
-        { "Avenger Stalker (S42 wreck)",   "AEGS_Avenger_Stalker" },
-        { "Hornet (Cal Mason's ship)",     "ANVL_Hornet_F7C" },
-        { "Vanduul Blade (AI)",            "VNCL_Blade_PU_AI_VAN" },
-        { "Vanduul Scythe (AI)",           "VNCL_Scythe_PU_AI_VAN" },
-        { "Vanduul Glaive (AI)",           "VNCL_Glaive_PU_AI_VAN" },
-        { "Vanduul Stinger (AI)",          "VNCL_Stinger_PU_AI_VAN" },
+        { "伊德里斯-P（斯坦顿号同级舰）", "AEGS_Idris_P" },
+        { "角斗士（SQ42 战斗机）",        "AEGS_Gladius" },
+        { "报复者（带 S42 HUD）",   "AEGS_Retaliator" },
+        { "星际远航者（第 5、7、9 章）",        "MISC_Starfarer" },
+        { "复仇者潜行者（S42 残骸）",   "AEGS_Avenger_Stalker" },
+        { "大黄蜂（卡尔·梅森的座驾）",     "ANVL_Hornet_F7C" },
+        { "范杜尔刀锋（AI）",            "VNCL_Blade_PU_AI_VAN" },
+        { "范杜尔镰刀（AI）",           "VNCL_Scythe_PU_AI_VAN" },
+        { "范杜尔长柄刀（AI）",           "VNCL_Glaive_PU_AI_VAN" },
+        { "范杜尔毒刺（AI）",          "VNCL_Stinger_PU_AI_VAN" },
     };
     Entry list[16];
     static_assert(sizeof(kSq42Ships) / sizeof(kSq42Ships[0]) + 2 <= sizeof(list) / sizeof(list[0]),
@@ -242,8 +242,8 @@ void DrawSq42Tab(void*, void*) {
     // spawn one UEE Bengal, the second with a Vanduul wing when an enemy side was found.
     static char bengalWing[64];
     const bool enemySide = Menu_EnemySideAvailable();
-    strcpy_s(bengalWing, enemySide ? "Bengal + Vanduul wing" : "Bengal + wing (UEE, no enemy side found)");
-    list[n++] = { "Bengal (UEE)", "RSI_Bengal_PU_AI_UEE", false,      1500.0f, false };
+    strcpy_s(bengalWing, enemySide ? "孟加拉 + 范杜尔编队" : "孟加拉 + 编队（UEE，未找到敌方阵营）");
+    list[n++] = { "孟加拉（UEE）", "RSI_Bengal_PU_AI_UEE", false,      1500.0f, false };
     list[n++] = { bengalWing,     "RSI_Bengal_PU_AI_UEE", enemySide, 1500.0f, false };
 
     static int   pick = 0;
@@ -262,9 +262,9 @@ void DrawSq42Tab(void*, void*) {
         return false;
     };
 
-    ImGui::TextWrapped("Your ships put you in the pilot seat; the Vanduul ones spawn 300 m up and come for you.");
+    ImGui::TextWrapped("己方飞船会让你坐上驾驶座；范杜尔飞船在上方 300 米生成并向你发起攻击。");
     ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##sq42shipFilter", "search ships...", sqFilter, sizeof(sqFilter));
+    ImGui::InputTextWithHint("##sq42shipFilter", "搜索飞船...", sqFilter, sizeof(sqFilter));
     ImGui::SetNextItemWidth(-1);
     if (ImGui::BeginCombo("##sq42ships", list[pick].label, ImGuiComboFlags_HeightLargest)) {
         for (int i = 0; i < n; ++i) {
@@ -272,7 +272,7 @@ void DrawSq42Tab(void*, void*) {
             ImGui::PushID(i);
             const bool have = known(list[i].cls);
             if (ImGui::Selectable(list[i].label, i == pick, have ? 0 : ImGuiSelectableFlags_Disabled)) pick = i;
-            if (!have) ImGui::SetItemTooltip("%s isn't in this game build's ship list.", list[i].cls);
+            if (!have) ImGui::SetItemTooltip("当前游戏版本的飞船列表里没有 %s。", list[i].cls);
             if (i == pick) ImGui::SetItemDefaultFocus();
             ImGui::PopID();
         }
@@ -280,11 +280,11 @@ void DrawSq42Tab(void*, void*) {
     }
     const bool pickKnown = known(list[pick].cls);
     if (list[pick].sit) {
-        ImGui::SliderFloat("height above me (m)", &height, 0.0f, 500.0f, "%.0f");
-        ImGui::Checkbox("put me in the pilot seat", &sit);
+        ImGui::SliderFloat("离我的高度（米）", &height, 0.0f, 500.0f, "%.0f");
+        ImGui::Checkbox("让我坐上驾驶座", &sit);
     }
     ImGui::BeginDisabled(!pickKnown);
-    const bool spawnClicked = ImGui::Button("Spawn", ImVec2(-1, 42));
+    const bool spawnClicked = ImGui::Button("生成", ImVec2(-1, 42));
     ImGui::EndDisabled();
     if (spawnClicked) {
         Menu_RequestSpawnClass(list[pick].cls,
@@ -294,22 +294,22 @@ void DrawSq42Tab(void*, void*) {
         MenuClose();
     }
 
-    ImGui::SeparatorText("Console");
+    ImGui::SeparatorText("控制台");
     static char cmd[256] = "";
     const bool consoleReady = Menu_ConsoleReady();
     ImGui::BeginDisabled(!consoleReady);
-    const float runWidth = ImGui::CalcTextSize("Run").x + ImGui::GetStyle().FramePadding.x * 2;
+    const float runWidth = ImGui::CalcTextSize("执行").x + ImGui::GetStyle().FramePadding.x * 2;
     ImGui::SetNextItemWidth(-(runWidth + ImGui::GetStyle().ItemSpacing.x));
     bool run = ImGui::InputTextWithHint("##console",
-                                        "a console command, e.g. i_target_selector.targeting2_enabled 1",
+                                        "控制台命令，例如 i_target_selector.targeting2_enabled 1",
                                         cmd, sizeof(cmd), ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    run |= ImGui::Button("Run");
+    run |= ImGui::Button("执行");
     ImGui::EndDisabled();
     if (run && cmd[0]) {
         Menu_RunConsole(cmd);
         cmd[0] = 0;
     }
-    if (!consoleReady) ImGui::TextDisabled("The game's console wasn't found yet.");
-    ImGui::TextWrapped("Runs in the game's own console. What it did shows in the game's log, not here.");
+    if (!consoleReady) ImGui::TextDisabled("还没有找到游戏的控制台。");
+    ImGui::TextWrapped("在游戏自带的控制台中执行，结果写在游戏日志里，不在这里显示。");
 }

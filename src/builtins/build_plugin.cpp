@@ -123,7 +123,7 @@ sco_result BuildLoad(const sco_api* api, sco_plugin* self) {
     else
         Log("[build] game.world isn't available: the ground ray and the camera come from sco-core's build rows");
     // Its page of the menu (and keys), through sco.ui; the menu shell draws it (tabs.h).
-    RegisterBuiltinTab(api, self, "build.build", "Build", kTabBuild, DrawBuildTab);
+    RegisterBuiltinTab(api, self, "build.build", "建造", kTabBuild, DrawBuildTab);
     BindBuiltinHotkey(api, self, "f6", "build.toggle");
     g_ticking = true;
     return SCO_OK;

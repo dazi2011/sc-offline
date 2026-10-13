@@ -5,7 +5,7 @@
 // launcher's own Rich Presence (0.7.0-0.7.4), which hard-coded the version it was built with.
 //
 // What it shows, every value read at run time:
-//   - details: where you are (teleport.spatial's zone name, "Daymar"), or "Star Citizen offline mod"
+//   - details: where you are (teleport.spatial's zone name, "Daymar"), or "星际公民离线模组"
 //   - state:   the ship you're aboard (game.vehicles + game.entities, "AEGS Gladius"), or the version
 //   - large image text: the host's own version string, api->host_version() ("sc-offline v0.7.5")
 // Settings (plugin.ini [settings], changed in the plugin's menu page): show_location, show_ship,
@@ -122,17 +122,17 @@ HANDLE Connect() {
 }
 
 std::string Activity(const Snapshot& s, long long start, uint64_t nonce) {
-    const std::string details = (s.showPlace && !s.place.empty()) ? s.place : "Star Citizen offline mod";
-    const std::string state = (s.showShip && !s.ship.empty()) ? "Aboard " + s.ship : s.version + " \xC2\xB7 single player";
+    const std::string details = (s.showPlace && !s.place.empty()) ? s.place : "星际公民离线模组";
+    const std::string state = (s.showShip && !s.ship.empty()) ? "乘坐 " + s.ship : s.version + " \xC2\xB7 单人游戏";
     std::string a = "{\"cmd\":\"SET_ACTIVITY\",\"nonce\":\"" + std::to_string(nonce) + "\",\"args\":{\"pid\":" +
                     std::to_string(GetCurrentProcessId()) + ",\"activity\":{";
     a += "\"details\":\"" + Json(details) + "\",\"state\":\"" + Json(state) + "\",";
     a += "\"timestamps\":{\"start\":" + std::to_string(start) + "},";
     a += "\"assets\":{\"large_image\":\"sc_offline\",\"large_text\":\"" + Json(s.version) +
-         "\",\"small_image\":\"sc_offline_small\",\"small_text\":\"Offline, single player\"}";
+         "\",\"small_image\":\"sc_offline_small\",\"small_text\":\"离线单人游戏\"}";
     if (s.showButtons)
-        a += std::string(",\"buttons\":[{\"label\":\"Join the Discord\",\"url\":\"") + kInvite +
-             "\"},{\"label\":\"Get sc-offline\",\"url\":\"" + kDownload + "\"}]";
+        a += std::string(",\"buttons\":[{\"label\":\"加入 Discord\",\"url\":\"") + kInvite +
+             "\"},{\"label\":\"获取 sc-offline\",\"url\":\"" + kDownload + "\"}]";
     a += "}}}";
     return a;
 }
