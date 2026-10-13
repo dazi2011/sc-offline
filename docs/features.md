@@ -15,7 +15,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 - Teleport to planets, moons, stations, Lagrange points and jump points, grouped by star system (`locations.txt`).
 - **Scan** lists everything the game has loaded and writes it to `locations_found.txt`. Interiors and small zones are hidden unless you ask to see them.
 - Save named spots of your own (`data/storage/quantum.db`). **F7** saves one quick position and **F8** takes you back to it (`data/storage/teleport.db`). F7 and F8 run the built-in teleport plugin's commands; see [Plugins](#plugins). Spots saved in `bookmarks.txt` and `spawn.txt` by an older version are imported the first time you start this one ([Saves](data-files.md#saves)).
-- A teleport won't take you into another star system. Pyro and Nyx can only be reached with the default `boot_map = PU_All`.
+- Places in the list can be teleported to across star systems; Pyro and Nyx are only loaded with the default `boot_map = PU_All`. F8 and saved spots stay within the system you're in.
 - Some Pyro places drop you in orbit, because `locations.txt` doesn't have their radius yet.
 
 ## Vehicles
@@ -84,9 +84,9 @@ If `game.world` isn't published or a capability isn't ready on your game build, 
 
 ## Contracts
 
-`contract_scripts.txt` lists the 796 contracts that run without any of CIG's mission scripts (hauling and similar). The mobiGlas list leaves out Pyro and Nyx contracts and anything named test, debug or tutorial (`src/contracts.cpp` `Listable`). `mod.log` records the counts at startup: `[contracts] N contracts known; M run ...`.
+`contract_scripts.txt` lists 2153 generated contracts and the Subsumption mission scripts each one runs; the scripts are in `data/scripts/`. The mobiGlas list leaves out anything named test, debug or tutorial, and Pyro and Nyx contracts unless the game booted into `PU_All` (`src/contracts.cpp` `Listable`). `mod.log` records the counts at startup: `[contracts] N contracts known; M run ...`.
 
-This repository ships none of CIG's Subsumption mission scripts. Contracts that need them (bounty, delivery-with-combat, salvage and others) are not offered.
+Upstream sc-offline removed `data/scripts/` (229 of CIG's Subsumption mission XML files) in 0.2.0-rc5 and keeps only the 796 contracts that need no script. This fork (dazi2011/sc-offline) keeps the scripts and the full list from 0.2.0-rc2, so bounty, delivery-with-combat, salvage and similar contracts stay available. They are CIG's files; they go if a rights holder asks.
 
 ## Natural mining
 
