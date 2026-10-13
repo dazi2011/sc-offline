@@ -240,7 +240,8 @@ static void ApplyTheme() {
     c[ImGuiCol_NavCursor]            = kLeaf;
 }
 
-// Bahnschrift (DIN-style, ships with Windows 10+), then Segoe UI, then ImGui's own font.
+// Bahnschrift (DIN-style, ships with Windows 10+), then Segoe UI, then ImGui's own font, with the
+// first Chinese font found merged in.
 static void LoadFonts() {
     ImGuiIO& io = ImGui::GetIO();
     char dir[MAX_PATH] = "C:\\Windows";
@@ -253,6 +254,28 @@ static void LoadFonts() {
         if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) continue;
         if ((font = io.Fonts->AddFontFromFileTTF(path, kBodySize)) != nullptr) break;
     }
+    // Chinese glyphs: data\font_zh.ttf/.ttc if present, then the macOS system fonts through
+    // Wine's Z: drive, then Windows' own. ImGui 1.92 rasterizes glyphs on demand, so no ranges.
+    char zh[MAX_PATH] = "";
+    const char* zhFonts[] = { nullptr, nullptr, "Z:\\System\\Library\\Fonts\\Hiragino Sans GB.ttc",
+                              "Z:\\System\\Library\\Fonts\\STHeiti Medium.ttc", nullptr, nullptr };
+    char own1[MAX_PATH], own2[MAX_PATH], win1[MAX_PATH], win2[MAX_PATH];
+    if (DataFilePath(own1, sizeof(own1), "font_zh.ttf")) zhFonts[0] = own1;
+    if (DataFilePath(own2, sizeof(own2), "font_zh.ttc")) zhFonts[1] = own2;
+    snprintf(win1, sizeof(win1), "%s\\Fonts\\msyh.ttc", dir); zhFonts[4] = win1;
+    snprintf(win2, sizeof(win2), "%s\\Fonts\\simhei.ttf", dir); zhFonts[5] = win2;
+    for (const char* path : zhFonts) {
+        if (!path || GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) continue;
+        ImFontConfig cfg;
+        cfg.MergeMode = font != nullptr;
+        if (ImFont* added = io.Fonts->AddFontFromFileTTF(path, kBodySize, &cfg)) {
+            if (!font) font = added;
+            strncpy_s(zh, path, _TRUNCATE);
+            break;
+        }
+    }
+    if (zh[0]) Log("[menu] Chinese font: %s", zh);
+    else Log("[menu] no Chinese font found; Chinese text will show as '?'");
     ImGuiStyle& st = ImGui::GetStyle();
     st.FontSizeBase = font ? kBodySize : 13.0f;
     st.FontScaleMain = font ? 1.0f : 1.3f;
