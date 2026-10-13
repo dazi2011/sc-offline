@@ -4,6 +4,7 @@
 #include "npc.h"
 #include "menu.h"
 #include "world_caps.h"
+#include <algorithm>
 #include <cmath>
 #include <share.h>
 
@@ -711,8 +712,8 @@ void ProcessBuild() {
     }
 
     double reach = g_ui.reachCm / 100.0;
-    if (Pressed(VK_OEM_4, closer, keys)) InterlockedExchange(&g_ui.reachCm, static_cast<LONG>((reach = max(5.0, reach - 5.0)) * 100));
-    if (Pressed(VK_OEM_6, farther, keys)) InterlockedExchange(&g_ui.reachCm, static_cast<LONG>((reach = min(300.0, reach + 5.0)) * 100));
+    if (Pressed(VK_OEM_4, closer, keys)) InterlockedExchange(&g_ui.reachCm, static_cast<LONG>((reach = std::max(5.0, reach - 5.0)) * 100));
+    if (Pressed(VK_OEM_6, farther, keys)) InterlockedExchange(&g_ui.reachCm, static_cast<LONG>((reach = std::min(300.0, reach + 5.0)) * 100));
     if (Pressed('R', r, keys)) g_yaw = fmod(g_yaw + 45.0, 360.0);
 
     const int index = g_ui.selected;
