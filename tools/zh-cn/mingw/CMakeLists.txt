@@ -66,6 +66,12 @@ endfunction()
 set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SCO_WERROR OFF CACHE BOOL "" FORCE)
 add_subdirectory("${SCO_ROOT}/external/sco-core" sco-core EXCLUDE_FROM_ALL)
+# toml++ reads the data packs' floats with std::from_chars, as it does under MSVC. Its clang/GCC
+# default is an istringstream, and libstdc++'s generic locale model (MinGW) switches the process-wide
+# C locale with setlocale twice per number. sco-core parses the quantum pack on the game's DataCore
+# loader thread, so that raced the game's own threads, and the game faulted in Wine's ucrtbase
+# (a freed locale's lconv) while Game2.dcb loaded.
+target_compile_definitions(sco_datacore PRIVATE TOML_FLOAT_CHARCONV=1)
 
 # What every sc-offline target had in the MSVC build: Unicode, _CONSOLE; the DLL adds _WINDLL.
 set(SCO_DEFINES UNICODE _UNICODE _CONSOLE)
