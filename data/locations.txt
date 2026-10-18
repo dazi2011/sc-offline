@@ -24,18 +24,18 @@ Stanton | Euterpe   | OOC_Stanton_4c_Euterpe   | 213000
 
 # Pyro: entity names confirmed by the scan; planet and moon names are the in-game ones (edit if
 # any are off). Radii unknown, so these arrive in orbit; add a radius in metres to land above them.
-Pyro | Pyro I     | pyro1  | 0
-Pyro | Monox      | pyro2  | 0
-Pyro | Bloom      | pyro3  | 0
-Pyro | Pyro IV    | pyro4  | 0
-Pyro | Pyro V     | pyro5  | 0
-Pyro | Ignis      | pyro5a | 0
-Pyro | Vatra      | pyro5b | 0
-Pyro | Adir       | pyro5c | 0
-Pyro | Fairo      | pyro5d | 0
-Pyro | Fuego      | pyro5e | 0
-Pyro | Vuur       | pyro5f | 0
-Pyro | Terminus   | pyro6  | 0
+Pyro | Pyro I     | pyro1  | 411700
+Pyro | Monox      | pyro2  | 529500
+Pyro | Bloom      | pyro3  | 413900
+Pyro | Pyro IV    | pyro4  | 321400
+Pyro | Pyro V     | pyro5  | 7812300
+Pyro | Ignis      | pyro5a | 393170
+Pyro | Vatra      | pyro5b | 365810
+Pyro | Adir       | pyro5c | 431000
+Pyro | Fairo      | pyro5d | 392240
+Pyro | Fuego      | pyro5e | 465670
+Pyro | Vuur       | pyro5f | 452830
+Pyro | Terminus   | pyro6  | 285000
 
 # Landing zones found by the scan
 Nyx     | Levski  | levski_all-001     | 0
