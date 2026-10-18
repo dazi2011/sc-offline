@@ -44,6 +44,9 @@ void        SpotToText(const Spot& s, std::string& out);
 int         SpotFromText(const char* text, Spot& s, bool checkPosition);
 const char* GoToSpot(const Spot& s, DWORD now, const char* why);   // teleport, then refine as zones stream in
 const char* TeleportIntoZone(uintptr_t zone, const double local[3]);
+// The same, standing up on a planet or moon: your up along the line from the zone's centre to
+// `local`, facing north along the surface (over the north pole: TeleportIntoZone's rotation).
+const char* TeleportIntoZoneUpright(uintptr_t zone, const double local[3]);
 void        SpotSystemName(const Spot& s, char* out, size_t n);   // "Stanton", from the OOC_<system>_ zone names
 void        CurrentSystemName(char* out, size_t n);               // the system you're in now, or ""
 uintptr_t   SystemZoneOf(uintptr_t zone);

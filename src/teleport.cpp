@@ -453,7 +453,54 @@ uintptr_t SystemZoneOf(uintptr_t zone) {
     return 0;
 }
 
-const char* TeleportIntoZone(uintptr_t zone, const double local[3]) {
+// ---- upright arrivals ----------------------------------------------------------------------------
+// The teleport takes your rotation twice: in the zone's frame (4 doubles at +0x08) and in the world
+// (4 floats at +0x60), each x, y, z, w. With the identity your up is the zone's z axis, which on a
+// planet is only "up" over its north pole: anywhere else you arrived tilted (upside down in the far
+// south) and tumbled while the game righted you.
+
+static void QuatFromColumns(const double c[3][3], double q[4]) {   // c[i] = column i (the image of axis i)
+    const double m00 = c[0][0], m11 = c[1][1], m22 = c[2][2];
+    const double m01 = c[1][0], m02 = c[2][0], m10 = c[0][1], m12 = c[2][1], m20 = c[0][2], m21 = c[1][2];
+    const double tr = m00 + m11 + m22;
+    if (tr > 0) {
+        const double s = 0.5 / sqrt(tr + 1.0);
+        q[3] = 0.25 / s; q[0] = (m21 - m12) * s; q[1] = (m02 - m20) * s; q[2] = (m10 - m01) * s;
+    } else if (m00 > m11 && m00 > m22) {
+        const double s = 2.0 * sqrt(1.0 + m00 - m11 - m22);
+        q[3] = (m21 - m12) / s; q[0] = 0.25 * s; q[1] = (m01 + m10) / s; q[2] = (m02 + m20) / s;
+    } else if (m11 > m22) {
+        const double s = 2.0 * sqrt(1.0 + m11 - m00 - m22);
+        q[3] = (m02 - m20) / s; q[0] = (m01 + m10) / s; q[1] = 0.25 * s; q[2] = (m12 + m21) / s;
+    } else {
+        const double s = 2.0 * sqrt(1.0 + m22 - m00 - m11);
+        q[3] = (m10 - m01) / s; q[0] = (m02 + m20) / s; q[1] = (m12 + m21) / s; q[2] = 0.25 * s;
+    }
+    const double n = sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+    for (int i = 0; i < 4; ++i) q[i] /= n;
+}
+
+static void ColumnsFromQuat(const double q[4], double c[3][3]) {
+    const double x = q[0], y = q[1], z = q[2], w = q[3];
+    c[0][0] = 1 - 2 * (y * y + z * z); c[0][1] = 2 * (x * y + z * w);     c[0][2] = 2 * (x * z - y * w);
+    c[1][0] = 2 * (x * y - z * w);     c[1][1] = 1 - 2 * (x * x + z * z); c[1][2] = 2 * (y * z + x * w);
+    c[2][0] = 2 * (x * z + y * w);     c[2][1] = 2 * (y * z - x * w);     c[2][2] = 1 - 2 * (x * x + y * y);
+}
+
+// The same rotation in the world: the zone's axes (their world directions) applied to it.
+static bool WorldRotation(uintptr_t zone, const double qLocal[4], double qWorld[4]) {
+    double origin[3], axis[3][3], r[3][3], w[3][3];
+    if (!ZoneAxes(zone, origin, axis)) return false;
+    ColumnsFromQuat(qLocal, r);
+    for (int c = 0; c < 3; ++c)
+        for (int k = 0; k < 3; ++k) w[c][k] = axis[0][k] * r[c][0] + axis[1][k] * r[c][1] + axis[2][k] * r[c][2];
+    QuatFromColumns(w, qWorld);
+    return true;
+}
+
+// qLocal: your rotation in the zone's frame (x, y, z, w); null for the zone's own axes, as every
+// teleport used to arrive.
+static const char* TeleportIntoZoneRotated(uintptr_t zone, const double local[3], const double* qLocal) {
     if (!zone) return "没有区域";
     if (!PositionLooksValid(local)) return "位置超出范围";
     __try {
@@ -478,6 +525,11 @@ const char* TeleportIntoZone(uintptr_t zone, const double local[3]) {
         *reinterpret_cast<double*>(params + 0x40) = 1.0;
         memcpy(params + 0x48, world, sizeof(world));
         reinterpret_cast<float*>(params + 0x60)[3] = 1.0f;
+        double qWorld[4];
+        if (qLocal && WorldRotation(zone, qLocal, qWorld)) {
+            memcpy(params + 0x08, qLocal, 4 * sizeof(double));
+            for (int i = 0; i < 4; ++i) reinterpret_cast<float*>(params + 0x60)[i] = static_cast<float>(qWorld[i]);
+        }
         params[0x7D] = 1;
         const uintptr_t comp = VCall<uintptr_t>(actor, 0x9D8);
         if (!comp) return "找不到传送组件";
@@ -487,6 +539,28 @@ const char* TeleportIntoZone(uintptr_t zone, const double local[3]) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return "传送时出错";
     }
+}
+
+
+const char* TeleportIntoZone(uintptr_t zone, const double local[3]) { return TeleportIntoZoneRotated(zone, local, nullptr); }
+
+const char* TeleportIntoZoneUpright(uintptr_t zone, const double local[3]) {
+    const double r = sqrt(Dot(local, local));
+    if (r < 1.0) return TeleportIntoZone(zone, local);
+    const double up[3] = { local[0] / r, local[1] / r, local[2] / r };
+    // Forward (y) towards the north pole along the surface; over a pole, the zone's y axis.
+    double fwd[3] = { -up[2] * up[0], -up[2] * up[1], 1.0 - up[2] * up[2] };
+    double len = sqrt(Dot(fwd, fwd));
+    if (len < 1e-6) {
+        fwd[0] = -up[1] * up[0]; fwd[1] = 1.0 - up[1] * up[1]; fwd[2] = -up[1] * up[2];
+        len = sqrt(Dot(fwd, fwd));
+    }
+    for (double& v : fwd) v /= len;
+    const double right[3] = { fwd[1] * up[2] - fwd[2] * up[1], fwd[2] * up[0] - fwd[0] * up[2], fwd[0] * up[1] - fwd[1] * up[0] };
+    const double cols[3][3] = { { right[0], right[1], right[2] }, { fwd[0], fwd[1], fwd[2] }, { up[0], up[1], up[2] } };
+    double q[4];
+    QuatFromColumns(cols, q);
+    return TeleportIntoZoneRotated(zone, local, q);
 }
 
 static bool g_spotLoadPending = false;   // LoadSavedSpot ran; the first TeleportTick loads the spot

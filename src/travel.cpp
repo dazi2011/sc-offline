@@ -701,7 +701,7 @@ static bool ProbeGround(uintptr_t zone, const double pos[3], double radius, doub
 static const char* HoverAt(uintptr_t zone, double height) {
     const double r = g_land.radius + height;
     const double local[3] = { g_land.dir[0] * r, g_land.dir[1] * r, g_land.dir[2] * r };
-    return TeleportIntoZone(zone, local);
+    return TeleportIntoZoneUpright(zone, local);
 }
 
 static void GiveUpLanding(uintptr_t zone, DWORD now, const char* why) {
@@ -751,7 +751,7 @@ static void StepLanding(DWORD now) {
     if (hit && g_land.lastGround > 0 && fabs(ground - g_land.lastGround) < 5.0) {
         const double target = ground + g_land.altitude;
         const double local[3] = { g_land.dir[0] * target, g_land.dir[1] * target, g_land.dir[2] * target };
-        const char* err = TeleportIntoZone(zone, local);
+        const char* err = TeleportIntoZoneUpright(zone, local);
         Log("[travel] landing on %s: ground %.1f m over the radius after %.1f s (%d probes, %d missed, %d steps, %d hits "
             "from above, first hit from %.0f m over the radius) -> %s", g_land.zoneName, ground - g_land.radius,
             (now - g_land.since) / 1000.0, g_land.probes, g_land.misses, g_land.steps, g_land.overHits, g_land.firstHitHeight,
@@ -791,7 +791,7 @@ static const char* GoToPlace(const TravelPlace& p, float altitude, const TravelL
         const bool probe = p.radius > 0 && (p.kind == Place_Planet || p.kind == Place_Moon);
         if (probe) height = p.radius + kStartOver;
         const double local[3] = { dir[0] * height, dir[1] * height, dir[2] * height };
-        if (const char* err = TeleportIntoZone(zone, local)) return err;
+        if (const char* err = TeleportIntoZoneUpright(zone, local)) return err;
         if (probe) {
             g_land = {};
             g_land.active = true;
