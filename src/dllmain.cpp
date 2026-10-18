@@ -2,6 +2,7 @@
 #include <tlhelp32.h>
 #include <shlwapi.h>
 #include "common.h"
+#include "tessflush.h"
 #include "patches.h"
 #include "hooks.h"
 #include "teleport.h"
@@ -409,6 +410,7 @@ static DWORD WINAPI ModThread(LPVOID param) {
             "overlay Vulkan layers (OBS, Steam), and one of those can crash the game while it loads. Start sc-offline.exe "
             "normally, not \"Run as administrator\", and untick \"Run this program as an administrator\" on StarCitizen.exe.");
 
+    TessFlush_Install();   // the Mac's D3DMetal: see tessflush.h
     LogStartup();
     ReadStartOptions();
     RunMainThreadService();
