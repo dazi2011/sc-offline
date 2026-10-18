@@ -31,9 +31,8 @@ constexpr double kMinAltitude = 100.0, kMaxAltitude = 20000.0;   // the Travel t
 TravelPlace    g_places[kMaxPlaces];   // game thread only (commands run there)
 TravelBookmark g_marks[kMaxBookmarks];
 
-sco_result Travel(const sco_arg* args, uint32_t, void*, char* reply, uint32_t size) {
-    const char* name = args[0].v.s;
-    const double altitude = args[1].v.f;
+// Both travel commands: the place by name, then where on it (planets and moons with a known radius).
+sco_result TravelTo(const char* name, double altitude, const TravelLanding& landing, char* reply, uint32_t size) {
     if (!name || !*name) {
         snprintf(reply, size, "Name a place from the Travel tab (locations.txt or a scan)");
         return SCO_BAD_ARG;
@@ -45,12 +44,39 @@ sco_result Travel(const sco_arg* args, uint32_t, void*, char* reply, uint32_t si
     const int n = Travel_GetPlaces(g_places, kMaxPlaces);
     for (int i = 0; i < n; ++i) {
         if (_stricmp(g_places[i].name, name) != 0) continue;
-        Travel_RequestPlace(g_places[i], static_cast<float>(altitude));
+        Travel_RequestPlace(g_places[i], static_cast<float>(altitude), landing);
         snprintf(reply, size, "Travelling to %s (%s); the status strip says where you arrive", g_places[i].name, g_places[i].system);
         return SCO_OK;
     }
     snprintf(reply, size, "'%s' isn't in the place list (%d places)", name, n);
     return SCO_FAILED;
+}
+
+// quantum.travel: the default landing (the sunlit side at 30 degrees north).
+sco_result Travel(const sco_arg* args, uint32_t, void*, char* reply, uint32_t size) {
+    return TravelTo(args[0].v.s, args[1].v.f, TravelLanding(), reply, size);
+}
+
+// quantum.land: where is "sunlit" (at latitude), "north", "south" or "latlon" (latitude, longitude).
+sco_result Land(const sco_arg* args, uint32_t, void*, char* reply, uint32_t size) {
+    const char* where = args[2].v.s ? args[2].v.s : "";
+    TravelLanding landing;
+    if (!_stricmp(where, "sunlit")) landing.mode = Landing_Sunlit;
+    else if (!_stricmp(where, "north")) landing.mode = Landing_North;
+    else if (!_stricmp(where, "south")) landing.mode = Landing_South;
+    else if (!_stricmp(where, "latlon")) landing.mode = Landing_LatLon;
+    else {
+        snprintf(reply, size, "Where must be sunlit, north, south or latlon");
+        return SCO_BAD_ARG;
+    }
+    const double lat = args[3].v.f, lon = args[4].v.f;
+    if (!(lat >= -90.0 && lat <= 90.0) || !(lon >= -180.0 && lon <= 180.0)) {
+        snprintf(reply, size, "Latitude must be -90 to 90 and longitude -180 to 180");
+        return SCO_BAD_ARG;
+    }
+    landing.latitude = static_cast<float>(lat);
+    landing.longitude = static_cast<float>(lon);
+    return TravelTo(args[0].v.s, args[1].v.f, landing, reply, size);
 }
 
 sco_result Bookmark(const sco_arg* args, uint32_t, void*, char* reply, uint32_t size) {
@@ -109,10 +135,19 @@ sco_result QuantumLoad(const sco_api* api, sco_plugin* self) {
         BuiltinArg("place", SCO_ARG_STRING, "A place's name, as the Travel tab lists it (Daymar)"),
         BuiltinArg("altitude", SCO_ARG_FLOAT, "Metres above the ground on arrival (100 to 20000)"),
     };
+    const sco_arg_def land[5] = {
+        BuiltinArg("place", SCO_ARG_STRING, "A place's name, as the Travel tab lists it (microTech)"),
+        BuiltinArg("altitude", SCO_ARG_FLOAT, "Metres above the ground on arrival (100 to 20000)"),
+        BuiltinArg("where", SCO_ARG_STRING, "sunlit, north, south or latlon"),
+        BuiltinArg("latitude", SCO_ARG_FLOAT, "Degrees, north positive (sunlit and latlon)"),
+        BuiltinArg("longitude", SCO_ARG_FLOAT, "Degrees in the body's own frame (latlon)"),
+    };
     const sco_arg_def mark[1] = { BuiltinArg("name", SCO_ARG_STRING, "The saved spot's name") };
     const sco_arg_def save[1] = { BuiltinArg("name", SCO_ARG_STRING, "A name for it; empty = the zone's name") };
     sco_result r = RegisterBuiltinCommand(api, self, kCap, "quantum.travel", "Travel to place",
-        "Teleports you to a planet, moon, station or other place from the Travel tab", Travel, travel, 2);
+        "Teleports you to a planet, moon, station or other place from the Travel tab (planets and moons: the sunlit side)", Travel, travel, 2);
+    if (r == SCO_OK) r = RegisterBuiltinCommand(api, self, kCap, "quantum.land", "Land on a planet",
+        "Teleports you over a chosen spot of a planet or moon from the Travel tab, then down to the altitude over the ground", Land, land, 5);
     if (r == SCO_OK) r = RegisterBuiltinCommand(api, self, kCap, "quantum.bookmark", "Go to saved spot",
         "Teleports you to one of the Travel tab's saved spots", Bookmark, mark, 1);
     if (r == SCO_OK) r = RegisterBuiltinCommand(api, self, kCap, "quantum.save_bookmark", "Save this spot",

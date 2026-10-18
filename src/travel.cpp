@@ -2,9 +2,12 @@
 #include "teleport.h"
 #include "spawner.h"
 #include "menu.h"
+#include "build.h"
 #include "builtins/builtin_store.h"
 #include <share.h>
 #include <cctype>
+#include <cmath>
+#include <cstdarg>
 #include <algorithm>
 
 // =============================================================================================
@@ -21,23 +24,29 @@ static TravelBookmark g_marks[kMaxBookmarks];
 static Spot           g_markSpots[kMaxBookmarks];   // game thread only
 static int            g_markCount = 0;
 static char           g_currentSystem[32] = "";
+static TravelPosition g_here = {};
+static bool           g_hereKnown = false;
 static volatile LONG  g_placesVersion = 0;      // bumped whenever g_places changes
 
 enum ReqKind { Req_None, Req_Place, Req_Bookmark, Req_Save, Req_Delete, Req_Scan };
-static struct { int kind; TravelPlace place; float altitude; int index; char name[64]; } g_req;
+static struct { int kind; TravelPlace place; float altitude; TravelLanding landing; int index; char name[64]; } g_req;
 
-static void Queue(int kind, const TravelPlace* place = nullptr, float altitude = 0, int index = -1, const char* name = nullptr) {
+static void Queue(int kind, const TravelPlace* place = nullptr, float altitude = 0, int index = -1, const char* name = nullptr,
+                  const TravelLanding& landing = TravelLanding()) {
     AcquireSRWLockExclusive(&g_travelLock);
     g_req = {};
     g_req.kind = kind;
     if (place) g_req.place = *place;
     g_req.altitude = altitude;
+    g_req.landing = landing;
     g_req.index = index;
     if (name) strncpy_s(g_req.name, name, _TRUNCATE);
     ReleaseSRWLockExclusive(&g_travelLock);
 }
 
-void Travel_RequestPlace(const TravelPlace& place, float altitude) { Queue(Req_Place, &place, altitude); }
+void Travel_RequestPlace(const TravelPlace& place, float altitude, const TravelLanding& landing) {
+    Queue(Req_Place, &place, altitude, -1, nullptr, landing);
+}
 void Travel_RequestBookmark(int index)                            { Queue(Req_Bookmark, nullptr, 0, index); }
 void Travel_RequestSaveBookmark(const char* name)                 { Queue(Req_Save, nullptr, 0, -1, name); }
 void Travel_RequestDeleteBookmark(int index)                      { Queue(Req_Delete, nullptr, 0, index); }
@@ -65,6 +74,14 @@ void Travel_CurrentSystem(char* out, size_t n) {
     AcquireSRWLockShared(&g_travelLock);
     strncpy_s(out, n, g_currentSystem, _TRUNCATE);
     ReleaseSRWLockShared(&g_travelLock);
+}
+
+bool Travel_CurrentPosition(TravelPosition& out) {
+    AcquireSRWLockShared(&g_travelLock);
+    const bool known = g_hereKnown;
+    if (known) out = g_here;
+    ReleaseSRWLockShared(&g_travelLock);
+    return known;
 }
 
 // =============================================================================================
@@ -569,7 +586,193 @@ static void StepScan(DWORD now) {
 // Going places
 // =============================================================================================
 
-static const char* GoToPlace(const TravelPlace& p, float altitude) {
+// The radius of the place whose entity (zone) name this is, from the lists; 0 when unknown.
+static double RadiusOfEntity(const char* entity) {
+    double r = 0;
+    AcquireSRWLockShared(&g_travelLock);
+    for (int i = 0; i < g_placeCount; ++i)
+        if (g_places[i].radius > 0 && _stricmp(g_places[i].entity, entity) == 0) { r = g_places[i].radius; break; }
+    ReleaseSRWLockShared(&g_travelLock);
+    return r;
+}
+
+static double Length(const double v[3]) { return sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+
+// The unit vector from the body's centre to where you arrive, in the body's own frame. Sunlit: the
+// star sits at the origin of its system's zone, so its position in the body's frame gives the
+// meridian under it. False (and the north pole) when that can't be read.
+static bool LandingDirection(uintptr_t zone, const TravelLanding& landing, double dir[3]) {
+    const double deg = 3.14159265358979323846 / 180.0;
+    double lat = landing.latitude, lon = landing.longitude;
+    bool ok = true;
+    switch (landing.mode) {
+    case Landing_North: lat = 90; lon = 0; break;
+    case Landing_South: lat = -90; lon = 0; break;
+    case Landing_Sunlit: {
+        ok = false;
+        __try {
+            const uintptr_t system = SystemZoneOf(zone);
+            const double origin[3] = { 0, 0, 0 };
+            double star[3], local[3];
+            if (system) {
+                LocalToWorld(system, origin, star);
+                if (WorldToLocal(zone, star, local) && (local[0] != 0 || local[1] != 0)) {
+                    lon = atan2(local[1], local[0]) / deg;
+                    ok = true;
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            ok = false;
+        }
+        if (!ok) { lat = 90; lon = 0; }
+        break;
+    }
+    default: break;
+    }
+    if (lat > 90) lat = 90;
+    if (lat < -90) lat = -90;
+    dir[0] = cos(lat * deg) * cos(lon * deg);
+    dir[1] = cos(lat * deg) * sin(lon * deg);
+    dir[2] = sin(lat * deg);
+    return ok;
+}
+
+// Arriving over a body: you first go 5 km over its radius above the spot (over the highest ground of
+// the bodies tried; microTech's tops out near 4 km), then step down while a ray from where you are
+// towards the centre looks for the ground. A body's physical terrain only exists within a few hundred
+// metres of you (150 to 650 m on Yela, about 500 m on microTech and Calliope; 2026-10-18), built
+// about two seconds after you get there, so you hover at each step for a while and the steps are
+// short. Should a step still take you under the surface, a second ray, from above the step you came
+// from down to just over your head, finds that surface over you. Two probes in a row must agree;
+// then you go to the ground plus the altitude you asked for. Nothing found down to 2 km under the
+// radius, or in 75 s: over the radius, as travel always did. (A hit right at the radius counts:
+// microTech's frozen sea is there.)
+constexpr double kStartOver = 5000.0, kStepDown = 400.0, kLowest = -2000.0;   // metres over the radius
+constexpr DWORD  kProbeEvery = 750, kFirstStep = 8000, kStepEvery = 3000, kProbeGiveUp = 75000;
+
+static struct {
+    bool     active = false;
+    uint64_t zoneId = 0;
+    char     zoneName[96] = "";
+    char     placeName[64] = "";
+    double   dir[3] = {};
+    double   radius = 0, altitude = 0, lastGround = -1, height = 0;   // height: where you hover, over the radius
+    DWORD    since = 0, lastTry = 0, lastStep = 0;
+    int      probes = 0, misses = 0, steps = 0, noPosition = 0, overHits = 0;   // for the summary line
+    double   firstHitHeight = -1;                                       // your height over the radius at the first real hit
+} g_land;
+
+static void FinishLanding(const char* fmt, ...) {
+    char text[256];
+    va_list a;
+    va_start(a, fmt);
+    vsnprintf(text, sizeof(text), fmt, a);
+    va_end(a);
+    SetMenuStatus("%s", text);
+    g_land.active = false;
+}
+
+// Your position in that zone (from the chain CaptureCurrentSpot reads), or false.
+static bool PositionInZone(const char* zoneName, double local[3]) {
+    Spot s;
+    if (CaptureCurrentSpot(s)) return false;
+    for (int i = 0; i < s.n; ++i)
+        if (_stricmp(s.z[i].name, zoneName) == 0) { memcpy(local, s.z[i].local, sizeof(s.z[i].local)); return true; }
+    return false;
+}
+
+static bool ProbeGround(uintptr_t zone, const double pos[3], double radius, double& ground) {
+    const double r = Length(pos);
+    if (r < 1) return false;
+    const double u[3] = { pos[0] / r, pos[1] / r, pos[2] / r };
+    // From just under your feet (the ray skips nothing, your own body included) to 5 km under the radius.
+    const double fromR = r - 3.0, toR = radius > 10000 ? radius - 5000.0 : radius * 0.5;
+    if (fromR <= toR) return false;
+    const double fromL[3] = { u[0] * fromR, u[1] * fromR, u[2] * fromR }, toL[3] = { u[0] * toR, u[1] * toR, u[2] * toR };
+    double fromW[3], toW[3], hitW[3], hitL[3];
+    LocalToWorld(zone, fromL, fromW);
+    LocalToWorld(zone, toL, toW);
+    if (!GroundRay(zone, fromW, toW, hitW) || !WorldToLocal(zone, hitW, hitL)) return false;
+    ground = Length(hitL);
+    return true;
+}
+
+// Hover (or step down) to `height` over the radius on the landing's line.
+static const char* HoverAt(uintptr_t zone, double height) {
+    const double r = g_land.radius + height;
+    const double local[3] = { g_land.dir[0] * r, g_land.dir[1] * r, g_land.dir[2] * r };
+    return TeleportIntoZone(zone, local);
+}
+
+static void GiveUpLanding(uintptr_t zone, DWORD now, const char* why) {
+    const char* err = HoverAt(zone, g_land.altitude);
+    Log("[travel] landing on %s: %s after %.1f s (%d probes, %d missed, %d steps, %d without your position), "
+        "over the radius instead -> %s", g_land.zoneName, why, (now - g_land.since) / 1000.0, g_land.probes, g_land.misses,
+        g_land.steps, g_land.noPosition, err ? err : "ok");
+    FinishLanding("%s：没测到地面，改为离基准半径 %.0f 米（地形高的地方会更低）。", g_land.placeName, g_land.altitude);
+}
+
+// The ray from above: from `above` metres over your feet down to 2.5 m over them (your own body is
+// not skipped, so it stops short of your head). A hit means ground over you.
+static bool ProbeOver(uintptr_t zone, const double pos[3], double above, double& ground) {
+    const double r = Length(pos);
+    if (r < 1) return false;
+    const double u[3] = { pos[0] / r, pos[1] / r, pos[2] / r };
+    const double fromR = r + above, toR = r + 2.5;
+    const double fromL[3] = { u[0] * fromR, u[1] * fromR, u[2] * fromR }, toL[3] = { u[0] * toR, u[1] * toR, u[2] * toR };
+    double fromW[3], toW[3], hitW[3], hitL[3];
+    LocalToWorld(zone, fromL, fromW);
+    LocalToWorld(zone, toL, toW);
+    if (!GroundRay(zone, fromW, toW, hitW) || !WorldToLocal(zone, hitW, hitL)) return false;
+    ground = Length(hitL);
+    return true;
+}
+
+static void StepLanding(DWORD now) {
+    if (!g_land.active || now - g_land.lastTry < kProbeEvery) return;
+    g_land.lastTry = now;
+    const uintptr_t zone = ZoneFromId(g_land.zoneId);
+    if (!zone || ZoneId(zone) != g_land.zoneId) { FinishLanding("%s 已不在了，降落中止。", g_land.placeName); return; }
+    double pos[3] = {}, ground = -1;
+    bool hit = false, placed = false, over = false;
+    __try {
+        placed = PositionInZone(g_land.zoneName, pos);
+        hit = placed && ProbeGround(zone, pos, g_land.radius, ground);
+        // Once you have stepped down: ground above you means the step went under the surface.
+        if (placed && !hit && g_land.steps > 0) over = hit = ProbeOver(zone, pos, kStepDown + 300.0, ground);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        hit = false;
+    }
+    ++g_land.probes;
+    if (!placed) ++g_land.noPosition;
+    else if (!hit) ++g_land.misses;
+    if (over) ++g_land.overHits;
+    if (hit && g_land.firstHitHeight < 0) g_land.firstHitHeight = Length(pos) - g_land.radius;
+    if (hit && g_land.lastGround > 0 && fabs(ground - g_land.lastGround) < 5.0) {
+        const double target = ground + g_land.altitude;
+        const double local[3] = { g_land.dir[0] * target, g_land.dir[1] * target, g_land.dir[2] * target };
+        const char* err = TeleportIntoZone(zone, local);
+        Log("[travel] landing on %s: ground %.1f m over the radius after %.1f s (%d probes, %d missed, %d steps, %d hits "
+            "from above, first hit from %.0f m over the radius) -> %s", g_land.zoneName, ground - g_land.radius,
+            (now - g_land.since) / 1000.0, g_land.probes, g_land.misses, g_land.steps, g_land.overHits, g_land.firstHitHeight,
+            err ? err : "ok");
+        if (err) FinishLanding("%s：找到了地面，但传送失败（%s）。", g_land.placeName, err);
+        else FinishLanding("已降落在 %s，离地 %.0f 米（地面海拔 %.0f 米）。", g_land.placeName, g_land.altitude, ground - g_land.radius);
+        return;
+    }
+    g_land.lastGround = hit ? ground : -1;
+    if (now - g_land.since >= kProbeGiveUp) { GiveUpLanding(zone, now, "no ground in time"); return; }
+    // Nothing under you within reach yet: once the body has had time to stream in, a step down.
+    if (hit || now - g_land.since < kFirstStep || now - g_land.lastStep < kStepEvery) return;
+    if (g_land.height - kStepDown < kLowest) { GiveUpLanding(zone, now, "no ground down to the lowest step"); return; }
+    g_land.height -= kStepDown;
+    g_land.lastStep = now;
+    ++g_land.steps;
+    if (const char* err = HoverAt(zone, g_land.height)) FinishLanding("%s：下降时传送失败（%s）。", g_land.placeName, err);
+}
+
+static const char* GoToPlace(const TravelPlace& p, float altitude, const TravelLanding& landing, DWORD now, bool& probing) {
+    probing = false;
     uintptr_t entity;
     uint64_t id;
     if (!FindEntityByNameEx(p.entity, entity, id))
@@ -577,17 +780,89 @@ static const char* GoToPlace(const TravelPlace& p, float altitude) {
     uintptr_t zone = 0;
     __try { zone = VCall<uintptr_t>(entity, 0x6E0); } __except (EXCEPTION_EXECUTE_HANDLER) { zone = 0; }
     if (zone) {
-        // Planets and moons are zones of their own: arrive straight above the north pole.
+        // Planets and moons are zones of their own: arrive over the spot the landing names.
         double height = altitude;
         if (p.radius > 0) height += p.radius;
         else if (p.kind == Place_Planet) height = 9.0e6;      // radius unknown: well clear of even a gas giant
         else if (p.kind == Place_Moon) height = 1.5e6;
         else height = altitude < 2000 ? 2000 : altitude;
-        const double local[3] = { 0, 0, height };
-        return TeleportIntoZone(zone, local);
+        double dir[3] = { 0, 0, 1 };
+        if (p.kind == Place_Planet || p.kind == Place_Moon) LandingDirection(zone, landing, dir);
+        const bool probe = p.radius > 0 && (p.kind == Place_Planet || p.kind == Place_Moon);
+        if (probe) height = p.radius + kStartOver;
+        const double local[3] = { dir[0] * height, dir[1] * height, dir[2] * height };
+        if (const char* err = TeleportIntoZone(zone, local)) return err;
+        if (probe) {
+            g_land = {};
+            g_land.active = true;
+            g_land.zoneId = ZoneId(zone);
+            strncpy_s(g_land.zoneName, ZoneName(zone) ? ZoneName(zone) : p.entity, _TRUNCATE);
+            strncpy_s(g_land.placeName, p.name, _TRUNCATE);
+            memcpy(g_land.dir, dir, sizeof(dir));
+            g_land.radius = p.radius;
+            g_land.altitude = altitude;
+            g_land.height = kStartOver;
+            g_land.since = g_land.lastTry = g_land.lastStep = now;   // the tick's clock, which StepLanding compares with
+            probing = true;
+            const double deg = 180.0 / 3.14159265358979323846;
+            Log("[travel] %s: arriving over latitude %.1f, longitude %.1f (landing mode %d), probing for the ground",
+                p.entity, asin(dir[2]) * deg, atan2(dir[1], dir[0]) * deg, landing.mode);
+        }
+        return nullptr;
     }
     if (!id) return "已找到，但没有可传送的目标 ID";
     return TeleportToEntity(id, altitude < 50 ? altitude : 50);
+}
+
+bool Travel_GroundUnder(double& overRadius, double& yourHeight, char* body, size_t n) {
+    Spot s;
+    if (CaptureCurrentSpot(s)) return false;
+    for (int i = 0; i < s.n; ++i) {
+        const double r = RadiusOfEntity(s.z[i].name);
+        if (r <= 0) continue;
+        strncpy_s(body, n, s.z[i].name, _TRUNCATE);
+        yourHeight = Length(s.z[i].local) - r;
+        uintptr_t entity = 0, zone = 0;
+        uint64_t id = 0;
+        if (!FindEntityByNameEx(s.z[i].name, entity, id)) return false;
+        double ground = -1;
+        bool hit = false;
+        __try {
+            zone = VCall<uintptr_t>(entity, 0x6E0);
+            hit = zone && ProbeGround(zone, s.z[i].local, r, ground);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            hit = false;
+        }
+        if (hit) overRadius = ground - r;
+        return hit;
+    }
+    return false;
+}
+
+// Where you are on the body under you: the innermost zone of yours with a known radius.
+static void UpdatePosition() {
+    TravelPosition here = {};
+    bool known = false;
+    Spot s;
+    if (!CaptureCurrentSpot(s)) {
+        for (int i = 0; i < s.n && !known; ++i) {
+            const double r = RadiusOfEntity(s.z[i].name);
+            if (r <= 0) continue;
+            const double* p = s.z[i].local;
+            const double len = Length(p);
+            if (len < 1) continue;
+            const double deg = 180.0 / 3.14159265358979323846;
+            strncpy_s(here.body, s.z[i].name, _TRUNCATE);
+            here.latitude = asin(p[2] / len) * deg;
+            here.longitude = atan2(p[1], p[0]) * deg;
+            here.altitude = len - r;
+            known = true;
+        }
+    }
+    AcquireSRWLockExclusive(&g_travelLock);
+    g_here = here;
+    g_hereKnown = known;
+    ReleaseSRWLockExclusive(&g_travelLock);
 }
 
 static void HandleRequest(DWORD now) {
@@ -598,7 +873,10 @@ static void HandleRequest(DWORD now) {
 
     switch (req.kind) {
     case Req_Place: {
-        if (const char* err = GoToPlace(req.place, req.altitude)) SetMenuStatus("%s %s.", req.place.name, err);
+        bool probing = false;
+        if (const char* err = GoToPlace(req.place, req.altitude, req.landing, now, probing)) SetMenuStatus("%s %s.", req.place.name, err);
+        else if (probing)
+            SetMenuStatus("正在前往 %s：先停在目标上空，一边下降一边测地面，大约半分钟后放到离地 %.0f 米。", req.place.name, req.altitude);
         else if (req.place.radius > 0)
             SetMenuStatus("已传送到 %s，离地 %.0f 米。", req.place.name, req.altitude);
         else if (req.place.kind != Place_Other)
@@ -673,6 +951,9 @@ void ProcessTravel(DWORD now) {
         strncpy_s(g_currentSystem, sys, _TRUNCATE);
         ReleaseSRWLockExclusive(&g_travelLock);
     }
+    static DWORD lastPosition = 0;
+    if (now - lastPosition > 1000) { lastPosition = now; UpdatePosition(); }
     HandleRequest(now);
+    StepLanding(now);
     StepScan(now);
 }

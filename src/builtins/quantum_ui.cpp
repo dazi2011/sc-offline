@@ -89,6 +89,7 @@ void DrawTravelTab(void*, void*) {
     static char  markName[64] = "";
     static char  selected[96] = "";       // entity name of the selected place
     static float altitude = 2000.0f;
+    static TravelLanding landing;            // where on planets and moons (travel.h)
     static bool  showMinor = false;
 
     static int np = 0, placesVersion = -1;
@@ -123,6 +124,35 @@ void DrawTravelTab(void*, void*) {
     SectionHeading("地点");
     ImGui::SetNextItemWidth(-1);
     ImGui::SliderFloat("##altitude", &altitude, 100.0f, 20000.0f, "到达时离地 %.0f 米", ImGuiSliderFlags_Logarithmic);
+    static const char* const kLandingModes[] = { "降落在向阳面（白天）", "降落在北极", "降落在南极", "降落在指定经纬度" };
+    ImGui::SetNextItemWidth(-1);
+    ImGui::Combo("##landing", &landing.mode, kLandingModes, static_cast<int>(sizeof(kLandingModes) / sizeof(kLandingModes[0])));
+    ImGui::SetItemTooltip("去行星和卫星时落在哪里（只对知道半径的星球有效）。\n"
+                          "向阳面：在恒星正下方那条经线上，到达时是白天。\n"
+                          "北极：以前的落点；不少星球的极地是荒地，比如微科的北极没有雪。\n"
+                          "到达后会等星球加载好、测到地面，再把你放到离地上面设的高度。");
+    if (landing.mode == Landing_Sunlit || landing.mode == Landing_LatLon) {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##latitude", &landing.latitude, -89.0f, 89.0f, "纬度 %.0f°（正数在北半球）");
+    }
+    if (landing.mode == Landing_LatLon) {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##longitude", &landing.longitude, -180.0f, 180.0f, "经度 %.0f°");
+        ImGui::SetItemTooltip("经纬度按星球自身的坐标计算，跟着星球自转，同一组数字总是同一块地面；"
+                              "和游戏里其他地图上的坐标不一定一样。");
+    }
+    TravelPosition pos;
+    if (Travel_CurrentPosition(pos)) {
+        ImGui::TextDisabled("你在 %s：纬度 %.1f°，经度 %.1f°，离基准半径 %.0f 米", ZhPlace(pos.body, pos.body), pos.latitude,
+                            pos.longitude, pos.altitude);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("用这个经纬度")) {
+            landing.mode = Landing_LatLon;
+            landing.latitude = static_cast<float>(pos.latitude);
+            landing.longitude = static_cast<float>(pos.longitude);
+        }
+        ImGui::SetItemTooltip("把降落位置设成你现在所在的经纬度，下次从别处去这颗星球时落在这里。");
+    }
     ImGui::Checkbox("显示室内和小区域", &showMinor);
     ImGui::SetItemTooltip("电梯大厅、机库、小行星带分段等，默认隐藏。");
     const TravelPlace* pick = nullptr;
@@ -185,7 +215,7 @@ void DrawTravelTab(void*, void*) {
     if (go && pick) {
         TravelPlace request = *pick;   // the name only shows in the status line
         CopyUtf8(request.name, sizeof(request.name), ZhPlace(pick->name, pick->entity));
-        Travel_RequestPlace(request, altitude);
+        Travel_RequestPlace(request, altitude, landing);
     }
 
     float progress = 0;
