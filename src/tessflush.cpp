@@ -5,7 +5,8 @@
 // The device context's vtable slots for the draws, the render target changes and the hull shader
 // point at detours: every context of the same class, the game's among them, then comes through
 // them. Each detour passes the call on unchanged; the draws first flush the context when a hull
-// shader is bound and this pass (since the last render target change) hasn't been flushed yet.
+// shader is bound and this pass (since the last render target change) hasn't been flushed yet, and
+// when no hull shader is bound but the draws just before were tessellated.
 namespace {
 
 // ID3D11DeviceContext vtable slots, in d3d11.h's order (IUnknown 0-2, ID3D11DeviceChild 3-6).
@@ -51,10 +52,16 @@ bool Patch(void* obj, int slot, void* detour) {
     return true;
 }
 
-// Per context: a hull shader is bound; this pass has been flushed.
-struct State { void* volatile ctx; bool hs; bool flushed; };
+// Per context: a hull shader is bound; this pass has been flushed; it drew tessellated since.
+struct State { void* volatile ctx; bool hs; bool flushed; bool tessDrawn; };
 State          g_state[16];
 volatile LONG64 g_flushes = 0;
+// Also flush between a pass's tessellated draws and the next untessellated one. In Pyro, with a
+// planet's ocean in view, the forward pass draws the ocean tessellated and then a mesh that isn't;
+// that draw now and then comes out wrong under D3DMetal (a faint extra layer over the dark sky on
+// single frames: the sky flickers). A flush between them stops it; one after that draw doesn't.
+// SC_OFFLINE_TESS_FLUSH=before keeps only the first flush.
+bool           g_after = true;
 
 State& For(void* ctx) {
     for (State& s : g_state)
@@ -69,8 +76,14 @@ using Ctx = ID3D11DeviceContext;
 
 void BeforeDraw(Ctx* c) {
     State& s = For(c);
-    if (!s.hs || s.flushed) return;
-    s.flushed = true;
+    if (s.hs) {
+        s.tessDrawn = g_after;
+        if (s.flushed) return;
+        s.flushed = true;
+    } else {
+        if (!s.tessDrawn) return;
+        s.tessDrawn = false;
+    }
     InterlockedIncrement64(&g_flushes);
     c->Flush();
 }
@@ -80,12 +93,13 @@ void STDMETHODCALLTYPE HSSetShader_(Ctx* c, ID3D11HullShader* hs, ID3D11ClassIns
     ORIG(void(STDMETHODCALLTYPE*)(Ctx*, ID3D11HullShader*, ID3D11ClassInstance* const*, UINT), c, kHSSetShader)(c, hs, ci, n);
 }
 void STDMETHODCALLTYPE OMSetRenderTargets_(Ctx* c, UINT n, ID3D11RenderTargetView* const* rtv, ID3D11DepthStencilView* dsv) {
-    For(c).flushed = false;
+    State& s = For(c);
+    s.flushed = s.tessDrawn = false;
     ORIG(void(STDMETHODCALLTYPE*)(Ctx*, UINT, ID3D11RenderTargetView* const*, ID3D11DepthStencilView*), c, kOMSetRenderTargets)(c, n, rtv, dsv);
 }
 void STDMETHODCALLTYPE OMSetRenderTargetsAndUAVs_(Ctx* c, UINT n, ID3D11RenderTargetView* const* rtv, ID3D11DepthStencilView* dsv,
                                                   UINT uavStart, UINT uavs, ID3D11UnorderedAccessView* const* uav, const UINT* counts) {
-    if (n != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL) For(c).flushed = false;
+    if (n != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL) { State& s = For(c); s.flushed = s.tessDrawn = false; }
     ORIG(void(STDMETHODCALLTYPE*)(Ctx*, UINT, ID3D11RenderTargetView* const*, ID3D11DepthStencilView*, UINT, UINT,
                                   ID3D11UnorderedAccessView* const*, const UINT*), c, kOMSetRenderTargetsAndUAVs)(c, n, rtv, dsv, uavStart, uavs, uav, counts);
 }
@@ -180,8 +194,9 @@ DWORD WINAPI InstallThread(LPVOID param) {
         } else {
             int patched = PatchContext(imm);
             if (SUCCEEDED(dev->CreateDeferredContext(0, &def)) && def) patched += PatchContext(def);
-            Log("[gpu] tessellation flush: on (%s; adapter \"%s\", vendor 0x%04X), %d slots in %ld vtable(s); "
-                "SC_OFFLINE_TESS_FLUSH=0 turns it off", force ? "forced" : "Wine on macOS", name, vendor, patched,
+            Log("[gpu] tessellation flush: on (%s; adapter \"%s\", vendor 0x%04X), %s, %d slots in %ld vtable(s); "
+                "SC_OFFLINE_TESS_FLUSH=0 turns it off", force ? "forced" : "Wine on macOS", name, vendor,
+                g_after ? "before and after tessellated draws" : "before tessellated passes only", patched,
                 static_cast<long>(g_tableCount));
         }
     }
@@ -201,5 +216,6 @@ void TessFlush_Install() {
     const bool set = len > 0 && len < sizeof(env);
     if (set && strcmp(env, "0") == 0) { Log("[gpu] tessellation flush: off (SC_OFFLINE_TESS_FLUSH=0)"); return; }
     const bool force = set && strcmp(env, "1") == 0;
+    g_after = !(set && strcmp(env, "before") == 0);
     if (HANDLE t = CreateThread(nullptr, 0, InstallThread, force ? reinterpret_cast<LPVOID>(1) : nullptr, 0, nullptr)) CloseHandle(t);
 }
