@@ -1,5 +1,6 @@
 #include "cvars.h"
 #include "menu.h"
+#include "tessflush.h"
 #include "world_caps.h"
 
 // Each cvar's storage is a sco-core row (cvars.*, sco/game/world.h), in capability cvars.qdrive_kept_on.
@@ -177,8 +178,46 @@ static void KeepSettingsOn() {
     }
 }
 
+// Under D3DMetal the planet terrain's depth prepass and its G-buffer pass don't meet: the prepass
+// (PlanetTerrainZPrepassDS) draws the patch without the ground layers' height displacement and with
+// coarser tessellation, the G-buffer pass (PlanetTerrainZPassDS) adds the displacement, centred on
+// zero, on a mesh tessellated more finely near the camera. With reverse depth and GREATER_EQUAL, the
+// G-buffer pass then loses every pixel where its surface dips behind the prepass's, and the empty
+// G-buffer shows through: flat lavender hexagons and rhombi (the tessellated triangles around the
+// low vertices) scattered over the ground near you, thickest on microTech's north polar cap. With
+// the terrain prepass off (r.PlanetTerrainDepthPrepassStage 0) the G-buffer pass sets the depth
+// itself and the ground is whole; frame rate measured the same (36.1 fps on, 37.2 off).
+// Wine on macOS only; SC_OFFLINE_PLANET_PREPASS=1 leaves the game's setting alone. Rechecked every
+// couple of seconds, since graphics setting changes may put it back.
+static void KeepPlanetPrepassOff() {
+    static int state = -1;   // -1 undecided, 0 not applied, 1 applied
+    static ULONGLONG next = 0;
+    if (state == 0) return;
+    const ULONGLONG now = GetTickCount64();
+    if (now < next) return;
+    next = now + 2000;
+    if (state < 0) {
+        if (!Menu_ConsoleReady()) return;
+        char env[8] = "";
+        const DWORD len = GetEnvironmentVariableA("SC_OFFLINE_PLANET_PREPASS", env, sizeof(env));
+        if (len > 0 && len < sizeof(env) && strcmp(env, "1") == 0) {
+            Log("[gpu] planet terrain depth prepass: left as the game sets it (SC_OFFLINE_PLANET_PREPASS=1)");
+            state = 0;
+            return;
+        }
+        if (!TessFlush_WineOnMac()) { state = 0; return; }
+        state = 1;
+    }
+    float v = 0;
+    if (!GetCVarNow("r.PlanetTerrainDepthPrepassStage", v) || v == 0) return;
+    const bool ok = SetCVarNow("r.PlanetTerrainDepthPrepassStage", 0);
+    Log("[gpu] planet terrain depth prepass: r.PlanetTerrainDepthPrepassStage %g -> 0%s (Wine on macOS: the prepass and the "
+        "G-buffer pass disagree on the terrain's depth; SC_OFFLINE_PLANET_PREPASS=1 keeps it)", v, ok ? "" : " FAILED");
+}
+
 void ProcessCVars() {
     KeepSettingsOn();
+    KeepPlanetPrepassOff();
     {
         const LONG mask = InterlockedExchange(&g_s42PendingMask, 0);
         const LONG vals = g_s42PendingVal;

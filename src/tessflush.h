@@ -10,3 +10,4 @@
 // Only under Wine on macOS (D3D11 translated to Metal); SC_OFFLINE_TESS_FLUSH=0 turns it off, =1
 // turns it on anywhere.
 void TessFlush_Install();   // ModThread, early; makes a throwaway device on a thread of its own
+bool TessFlush_WineOnMac();  // Wine on macOS (ntdll's wine_get_host_version says Darwin)

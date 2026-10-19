@@ -193,6 +193,8 @@ DWORD WINAPI InstallThread(LPVOID param) {
 
 }  // namespace
 
+bool TessFlush_WineOnMac() { return WineOnMac(); }
+
 void TessFlush_Install() {
     char env[8] = "";
     const DWORD len = GetEnvironmentVariableA("SC_OFFLINE_TESS_FLUSH", env, sizeof(env));
