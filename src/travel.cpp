@@ -697,11 +697,31 @@ static bool ProbeGround(uintptr_t zone, const double pos[3], double radius, doub
     return true;
 }
 
+// Moves you to `local` without a teleport when the body's zone is the one you're in: a teleport
+// sets your head level again (whatever you were looking at, measured 2026-10-22), and the landing
+// moved you every 3 s on the way down, so you couldn't look around while you fell. Setting your
+// entity's position keeps your view and your fall. False when you're in another zone (a ship,
+// say) or the move didn't take: then the caller teleports.
+static bool MoveWithinZone(uintptr_t zone, const double local[3]) {
+    __try {
+        uintptr_t actor, entity;
+        if (!GetLocalPlayer(actor, entity) || VCall<uintptr_t>(entity, 0x6B8) != zone) return false;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    const uint64_t me = LocalPlayerEntityId();
+    return me && MoveEntityLocal(me, local);
+}
+
+static const char* PlaceAt(uintptr_t zone, const double local[3]) {
+    return MoveWithinZone(zone, local) ? nullptr : TeleportIntoZoneUpright(zone, local);
+}
+
 // Hover (or step down) to `height` over the radius on the landing's line.
 static const char* HoverAt(uintptr_t zone, double height) {
     const double r = g_land.radius + height;
     const double local[3] = { g_land.dir[0] * r, g_land.dir[1] * r, g_land.dir[2] * r };
-    return TeleportIntoZoneUpright(zone, local);
+    return PlaceAt(zone, local);
 }
 
 static void GiveUpLanding(uintptr_t zone, DWORD now, const char* why) {
@@ -751,7 +771,7 @@ static void StepLanding(DWORD now) {
     if (hit && g_land.lastGround > 0 && fabs(ground - g_land.lastGround) < 5.0) {
         const double target = ground + g_land.altitude;
         const double local[3] = { g_land.dir[0] * target, g_land.dir[1] * target, g_land.dir[2] * target };
-        const char* err = TeleportIntoZoneUpright(zone, local);
+        const char* err = PlaceAt(zone, local);
         Log("[travel] landing on %s: ground %.1f m over the radius after %.1f s (%d probes, %d missed, %d steps, %d hits "
             "from above, first hit from %.0f m over the radius) -> %s", g_land.zoneName, ground - g_land.radius,
             (now - g_land.since) / 1000.0, g_land.probes, g_land.misses, g_land.steps, g_land.overHits, g_land.firstHitHeight,

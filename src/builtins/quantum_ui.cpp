@@ -124,6 +124,9 @@ void DrawTravelTab(void*, void*) {
     SectionHeading("地点");
     ImGui::SetNextItemWidth(-1);
     ImGui::SliderFloat("##altitude", &altitude, 100.0f, 20000.0f, "到达时离地 %.0f 米", ImGuiSliderFlags_Logarithmic);
+    ImGui::SetItemTooltip("去知道半径的行星和卫星时：先在目标上空测到地面，再把你放到离地这个高度，之后自由下落，下落中可以随意转动视角。\n"
+                          "其他地点不按离地算：空间站、城市等放在目标旁边（最多上方 50 米），不知道半径的星球放在轨道上。\n"
+                          "这个值只在本次游戏里记住，重开游戏回到 2000 米。");
     static const char* const kLandingModes[] = { "降落在向阳面（白天）", "降落在北极", "降落在南极", "降落在指定经纬度" };
     ImGui::SetNextItemWidth(-1);
     ImGui::Combo("##landing", &landing.mode, kLandingModes, static_cast<int>(sizeof(kLandingModes) / sizeof(kLandingModes[0])));
