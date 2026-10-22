@@ -3,6 +3,7 @@
 #include <shlwapi.h>
 #include "common.h"
 #include "tessflush.h"
+#include "rosetta.h"
 #include "patches.h"
 #include "hooks.h"
 #include "teleport.h"
@@ -118,8 +119,10 @@ static void StartOffline() {
     // and hooks below change (the shard gate, the fleet manager's retrieve). The report goes out
     // with LogStartup.
     if (!sco::game::RegisterGameSignatures()) Log("[!] sco-core's game signature tables did not all register");
+    RosettaFix_RegisterSignatures();
     sco::ResolveAll(sco::ModuleImage());
     g_signaturesResolved = true;
+    RosettaFix_Apply();   // the Mac's Rosetta: see rosetta.h
     g_offline = ApplyOfflinePatches();
     if (!g_offline) return;
     InstallHooks();

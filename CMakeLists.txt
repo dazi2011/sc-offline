@@ -115,6 +115,7 @@ add_library(dinput8 SHARED
   src/hotkeys.cpp
   src/travel.cpp
   src/tessflush.cpp
+  src/rosetta.cpp
   # Built-in plugins (src/builtins/builtins.h).
   src/builtins/teleport_plugin.cpp
   src/builtins/spawn_plugin.cpp
