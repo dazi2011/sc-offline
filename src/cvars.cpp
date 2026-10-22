@@ -215,9 +215,41 @@ static void KeepPlanetPrepassOff() {
         "G-buffer pass disagree on the terrain's depth; SC_OFFLINE_PLANET_PREPASS=1 keeps it)", v, ok ? "" : " FAILED");
 }
 
+// DLSS (r.TSR.Technique 2) under D3DMetal goes to MetalFX, and with it the GPU stalls: far from
+// planets the game hit GPU timeouts within 20-90 s and crashed on an MPSGraph assertion (two of
+// three sessions); with TSR (0) none did, at the same frame rate. So under Wine on macOS DLSS is
+// switched to TSR; SC_OFFLINE_DLSS=1 keeps DLSS. Rechecked like the prepass above, since the
+// graphics menu may set it back.
+static void KeepTsrOnMac() {
+    static int state = -1;   // -1 undecided, 0 not applied, 1 applied
+    static ULONGLONG next = 0;
+    if (state == 0) return;
+    const ULONGLONG now = GetTickCount64();
+    if (now < next) return;
+    next = now + 2000;
+    if (state < 0) {
+        if (!Menu_ConsoleReady()) return;
+        char env[8] = "";
+        const DWORD len = GetEnvironmentVariableA("SC_OFFLINE_DLSS", env, sizeof(env));
+        if (len > 0 && len < sizeof(env) && strcmp(env, "1") == 0) {
+            Log("[gpu] upscaler: left as the game sets it (SC_OFFLINE_DLSS=1)");
+            state = 0;
+            return;
+        }
+        if (!TessFlush_WineOnMac()) { state = 0; return; }
+        state = 1;
+    }
+    float v = 0;
+    if (!GetCVarNow("r.TSR.Technique", v) || v != 2) return;
+    const bool ok = SetCVarNow("r.TSR.Technique", 0);
+    Log("[gpu] upscaler: r.TSR.Technique 2 (DLSS) -> 0 (TSR)%s (Wine on macOS: DLSS goes to MetalFX, which ran into GPU "
+        "timeouts and crashes; SC_OFFLINE_DLSS=1 keeps it)", ok ? "" : " FAILED");
+}
+
 void ProcessCVars() {
     KeepSettingsOn();
     KeepPlanetPrepassOff();
+    KeepTsrOnMac();
     {
         const LONG mask = InterlockedExchange(&g_s42PendingMask, 0);
         const LONG vals = g_s42PendingVal;
